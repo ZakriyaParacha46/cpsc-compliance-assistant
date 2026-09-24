@@ -20,10 +20,12 @@ services:
     env_file: [.env]
     environment:
       DATABASE_URL: postgresql://cpsc:cpsc@db:5432/cpsc
-      AWS_PROFILE: ${AWS_PROFILE:-default}
+    # AWS access: the EC2 instance role on the server. On a laptop, set AWS_PROFILE in .env.
     volumes:
       - ./api/app:/app/app
-      - ~/.aws:/home/app/.aws:ro # only used when LLM_MODE=bedrock
+      - ./api/ingest:/app/ingest
+      - ./data:/app/data
+      - ~/.aws:/home/app/.aws:ro
     ports: ["127.0.0.1:8000:8000"]
     depends_on:
       db: { condition: service_healthy }

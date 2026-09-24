@@ -47,6 +47,28 @@ prodlike: web-build ## Prod image + built frontend behind Caddy on :8080 (mirror
 	$(COMPOSE) -f docker-compose.yml -f deploy/compose.prodlike.yml --profile prodlike up -d --build
 	@sleep 3 && curl -fsS http://localhost:8080/api/health && echo && echo "open http://localhost:8080"
 
+# ---------- data (runs in the api container, next to the database) ----------
+# data/ is created first as you, so Docker doesn't create it as root.
+RUN_API := mkdir -p data && $(COMPOSE) run --rm api
+
+ingest-download: ## Download the 16 CFR parts from eCFR into data/raw (+ S3)
+	$(RUN_API) python -m ingest download
+
+ingest-dry-run: ## Parse and chunk only; nothing embedded or stored
+	$(RUN_API) python -m ingest load --dry-run
+
+ingest-load: ## Parse, chunk, embed with Titan, store in Postgres
+	$(RUN_API) python -m ingest load
+
+ingest-stats: ## Show what's stored in the database
+	$(RUN_API) python -m ingest stats
+
+show: ## Show the chunks of one section: make show S=1263.3
+	$(RUN_API) python -m ingest show $(S)
+
+search: ## Vector search check: make search Q="coin battery warning label"
+	$(RUN_API) python -m ingest search "$(Q)"
+
 # ---------- checks (CI runs exactly these) ----------
 api-check: ## Lint, format-check and test the API
 	cd api && uv sync --frozen
@@ -90,4 +112,4 @@ ci-local: check image image-smoke lint-workflows lint-infra ## Full CI dry run l
 act: ## Run the pipeline's check jobs in containers via `act` (brew install act)
 	act push -j api-check -j web-check --container-architecture linux/arm64
 
-.PHONY: help setup hooks up web preview db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act
+.PHONY: help setup hooks up web preview ingest-download ingest-dry-run ingest-load ingest-stats show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act

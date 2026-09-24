@@ -8,9 +8,11 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY app ./app
+COPY ingest ./ingest
 ENV PATH="/app/.venv/bin:$PATH"
 
-RUN useradd --uid 10001 app
+# uid 1000 matches ec2-user, so files written to mounted folders (data/) stay yours.
+RUN useradd --uid 1000 app
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').status==200 else 1)"

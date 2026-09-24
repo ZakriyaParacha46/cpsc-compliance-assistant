@@ -121,7 +121,7 @@ Resources:
           chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
           echo '/swapfile none swap sw 0 0' >> /etc/fstab
           mkdir -p /opt/cpsc-rag && chown ec2-user:ec2-user /opt/cpsc-rag
-          echo "setup finished $(date -u)" > /opt/cpsc-rag/READY
+          echo "setup finished $(date -u)" > /var/local/cpsc-rag-setup-done
 
   # Fixed public IP, so your SSH command never changes (even after stop/start).
   ServerIP:
