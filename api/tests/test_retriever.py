@@ -79,7 +79,7 @@ def test_k_limits_results():
 def test_golden_set_is_well_formed():
     guidance_ids = {d.id for d in load_folder(Path(__file__).parents[2] / "data" / "cpsc-html")}
     in_scope = [g for g in GOLDEN if g["expect"]]
-    assert len(GOLDEN) == 20 and len(in_scope) == 17
+    assert len(GOLDEN) == 22 and len(in_scope) == 19
     for g in in_scope:
         for e in g["expect"]:
             if e.startswith("cpsc-"):

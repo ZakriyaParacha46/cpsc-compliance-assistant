@@ -30,8 +30,10 @@ class Settings(BaseSettings):
     max_output_tokens: int = 800
     max_chunks: int = 6
     # "Not covered" without calling the model when even the closest chunk is further than
-    # this (cosine distance, 0 = identical). Tuned with `python -m eval.retrieval`.
-    relevance_max_distance: float = 0.61
+    # this (cosine distance, 0 = identical). A backstop for clearly unrelated questions: the
+    # Haiku scope classifier is the main off-topic guard. 0.61 refused short, vague but valid
+    # questions in human testing. Tuned with `python -m eval.retrieval`.
+    relevance_max_distance: float = 0.70
 
     # Retrieval balance (see eval results): guidance can't crowd out rules and laws.
     max_guidance: int = 3

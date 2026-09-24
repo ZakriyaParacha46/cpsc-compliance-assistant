@@ -3,22 +3,27 @@
     python -m eval.retrieval                 # score all configurations, write a report
     python -m eval.retrieval --threshold 0.5 # try a different relevance threshold
 
-No answer model is called: this measures only whether the right sources reach the prompt.
-Cost: about 20 Titan embedding calls (well under $0.001).
+The answer model is not called: this measures whether the right sources reach the prompt,
+and whether off-topic questions are stopped by the two guards (distance threshold and the
+Haiku scope classifier). Cost: ~22 Titan calls + ~22 tiny Haiku calls, about $0.002.
 """
 
 import argparse
+import asyncio
 import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from langchain_core.embeddings import Embeddings
 
 from app.config import settings
 from app.rag import store
 from app.rag.embeddings import get_embeddings
+from app.rag.pipeline import is_in_scope
 from app.rag.retriever import HybridRetriever, KeywordIndex
+from app.services import chat_models
 from eval.golden import GOLDEN, is_binding
 
 # name, retriever settings
@@ -93,7 +98,24 @@ def run_config(retriever: HybridRetriever) -> list[QuestionResult]:
     return out
 
 
-def summarize(name: str, results: list[QuestionResult], threshold: float) -> dict:
+def classify_all() -> dict[str, bool]:
+    """Scope classifier verdict (True = IN) for every golden question."""
+    services = SimpleNamespace(classifier_llm=chat_models()[0])
+
+    async def run() -> list[bool]:
+        return await asyncio.gather(*(is_in_scope(services, g["q"]) for g in GOLDEN))
+
+    return dict(zip([g["q"] for g in GOLDEN], asyncio.run(run()), strict=True))
+
+
+def refused(r: QuestionResult, threshold: float, scope: dict[str, bool]) -> bool:
+    """What the app does: refuse if the classifier says OUT or retrieval is too far."""
+    return (r.best_distance or 1) > threshold or not scope[r.q]
+
+
+def summarize(
+    name: str, results: list[QuestionResult], threshold: float, scope: dict[str, bool]
+) -> dict:
     inscope = [r for r in results if r.in_scope]
     outscope = [r for r in results if not r.in_scope]
     with_binding = [r for r in inscope if r.binding_hit is not None]
@@ -104,9 +126,9 @@ def summarize(name: str, results: list[QuestionResult], threshold: float) -> dic
         "binding@6": sum(bool(r.binding_hit) for r in with_binding),
         "with_binding": len(with_binding),
         "mrr": round(sum(1 / r.rank for r in inscope if r.rank) / len(inscope), 3),
-        "refused": sum((r.best_distance or 1) > threshold for r in outscope),
+        "refused": sum(refused(r, threshold, scope) for r in outscope),
         "out_scope": len(outscope),
-        "false_refusals": sum((r.best_distance or 1) > threshold for r in inscope),
+        "false_refusals": sum(refused(r, threshold, scope) for r in inscope),
     }
 
 
@@ -120,15 +142,16 @@ def main() -> None:
     index = KeywordIndex(store.all_chunks())
     print(f"Index: {len(index.docs)} chunks. Threshold: best cosine distance > {args.threshold}\n")
 
+    scope = classify_all()
     summaries, details = [], {}
     for name, opts in CONFIGS:
         retriever = HybridRetriever(vector_store=vs, keyword_index=index, k=6, **opts)
         results = run_config(retriever)
         details[name] = results
-        summaries.append(summarize(name, results, args.threshold))
+        summaries.append(summarize(name, results, args.threshold, scope))
 
     lines = [
-        "| Configuration | hit@6 | binding source @6 | MRR | off-topic refused | false refusals |",
+        "| Configuration | hit@6 | binding @6 | MRR | off-topic refused* | false refusals* |",
         "|---|---|---|---|---|---|",
     ]
     for s in summaries:
@@ -136,16 +159,19 @@ def main() -> None:
             f"| {s['config']} | {s['hit@6']}/{s['in_scope']} | {s['binding@6']}/{s['with_binding']}"
             f" | {s['mrr']} | {s['refused']}/{s['out_scope']} | {s['false_refusals']} |"
         )
+    lines.append("\n*refused = scope classifier says OUT, or best distance above the threshold")
     table = "\n".join(lines)
     print(table)
 
     best = details[BEST]
     print(f"\nPer question ({BEST}):")
     for r in best:
-        mark = "✓" if (r.rank if r.in_scope else (r.best_distance or 1) > args.threshold) else "✗"
+        stop = refused(r, args.threshold, scope)
+        mark = "✓" if ((r.rank and not stop) if r.in_scope else stop) else "✗"
         where = f"rank {r.rank}" if r.rank else ("—" if r.in_scope else "off-topic")
         bind = "" if r.binding_hit is None else ("  binding ✓" if r.binding_hit else "  binding ✗")
-        print(f"{mark} d={r.best_distance:.3f}  {where:<9}{bind:<12} {r.q}")
+        cls = "IN " if scope[r.q] else "OUT"
+        print(f"{mark} d={r.best_distance:.3f} cls={cls} {where:<9}{bind:<12} {r.q}")
         if r.in_scope and not r.rank:
             print(f"      got: {', '.join(r.top)}")
 

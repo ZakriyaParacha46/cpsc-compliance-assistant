@@ -55,5 +55,6 @@ export type AskEvent =
       cited: number[]; // source numbers the answer actually cites
       standards: string[]; // paid standards named in cited sources (text not included)
       usage: Usage;
+      reason?: string; // why it was refused; sent in dev only, never in prod
     }
   | { type: "error"; code: string; message: string; retry_after?: number };

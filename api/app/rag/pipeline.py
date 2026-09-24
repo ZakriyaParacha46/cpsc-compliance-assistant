@@ -85,18 +85,22 @@ async def answer(services: Services, question: str, visitor: str, ip: str) -> As
     query_id = str(uuid.uuid4())
     record: dict[str, Any] = {"id": query_id, "visitor_id": visitor, "ip": ip, "question": question}
 
-    def finish(status: str, cited: list[int], standards: list[str] | None = None) -> dict:
+    def finish(
+        status: str, cited: list[int], standards: list[str] | None = None, reason: str = ""
+    ) -> dict:
         record.update(status=status, latency_ms=int((time.monotonic() - started) * 1000))
         services.log_query(record)
-        usage = asdict(services.limiter.usage(visitor))
-        return {
+        done = {
             "type": "done",
             "query_id": query_id,
             "status": status,
             "cited": cited,
             "standards": standards or [],
-            "usage": usage,
+            "usage": asdict(services.limiter.usage(visitor)),
         }
+        if reason and settings.env != "prod":
+            done["reason"] = reason  # why it was refused: shown while testing, never in prod
+        return done
 
     # Scope check and retrieval run at the same time: the classifier costs no extra latency.
     in_scope, result = await asyncio.gather(
@@ -111,14 +115,16 @@ async def answer(services: Services, question: str, visitor: str, ip: str) -> As
     if not in_scope:
         yield {"type": "sources", "query_id": query_id, "citations": []}
         yield {"type": "token", "text": OFF_TOPIC_MESSAGE}
-        yield finish("off_topic", [])
+        yield finish("off_topic", [], reason="scope classifier said OUT")
         return
 
     too_far = result.best_distance is None or result.best_distance > settings.relevance_max_distance
     if too_far or not docs:
         yield {"type": "sources", "query_id": query_id, "citations": []}
         yield {"type": "token", "text": NOT_COVERED_MESSAGE}
-        yield finish("not_covered", [])
+        dist = "none" if result.best_distance is None else f"{result.best_distance:.3f}"
+        limit = settings.relevance_max_distance
+        yield finish("not_covered", [], reason=f"best distance {dist} > threshold {limit}")
         return
 
     sources = [_citation(n, d.metadata) for n, d in enumerate(docs, start=1)]
@@ -140,7 +146,7 @@ async def answer(services: Services, question: str, visitor: str, ip: str) -> As
         log.info("answer rejected (%s); returning not covered", check.reason)
         record.update(rejected=check.reason)
         yield {"type": "token", "text": NOT_COVERED_MESSAGE}
-        yield finish("not_covered", [])
+        yield finish("not_covered", [], reason=f"answer rejected: {check.reason}")
         return
 
     for piece in _pieces(text):

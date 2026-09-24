@@ -6,11 +6,12 @@ import { Sidebar } from "./components/Sidebar";
 import type { Citation, DocSummary, Usage } from "./types";
 
 const MAX_CHARS = 500;
+// Chosen from eval questions that retrieve well (see api/eval/golden.py).
 const EXAMPLES = [
-  "Do I need a Children's Product Certificate for a kids' LED night light?",
+  "Do children's toys need third-party testing and a Children's Product Certificate?",
   "Who issues the General Certificate of Conformity, me or my factory?",
   "What does Reese's Law require for a device with a coin cell battery?",
-  "What documents must my suppliers give me?",
+  "What is the maximum lead content allowed in children's products?",
 ];
 
 type Viewer = { docId: string; citation: Citation | null } | null;
@@ -49,6 +50,7 @@ export default function App() {
       status: null,
       error: null,
       queryId: null,
+      reason: null,
     });
 
     await ask(
@@ -62,7 +64,13 @@ export default function App() {
             case "token":
               return { ...a, text: a.text + e.text };
             case "done":
-              return { ...a, status: e.status, cited: e.cited, standards: e.standards };
+              return {
+                ...a,
+                status: e.status,
+                cited: e.cited,
+                standards: e.standards,
+                reason: e.reason ?? null,
+              };
             case "error":
               return { ...a, error: e.message };
           }

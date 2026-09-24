@@ -116,6 +116,15 @@ GOLDEN: list[dict] = [
         "q": "How quickly must a company report a product defect to CPSC?",
         "expect": ["1115.14", "1115.12", "15 U.S.C. 2064"],
     },
+    # Short, vague phrasings from human testing (round 1): no "CPSC" or "certificate" context.
+    {
+        "q": "How long do I have to keep my test records?",
+        "expect": ["1110.17", "1107.26"],
+    },
+    {
+        "q": "What documents must my suppliers give me?",
+        "expect": ["1110.13", "15 U.S.C. 2063", "cpsc-faq-gcc", "cpsc-faq-cpc"],
+    },
     # Out of scope: other agencies or not product safety at all.
     {"q": "What are the FDA nutrition labeling rules for packaged snacks?", "expect": None},
     {"q": "How do I register a trademark for my brand name?", "expect": None},

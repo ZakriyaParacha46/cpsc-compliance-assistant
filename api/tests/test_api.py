@@ -181,3 +181,13 @@ def test_client_ip_trusts_only_our_proxies(monkeypatch):
     assert main.client_ip(Req()) == "203.0.113.9"  # not the forged 6.6.6.6
     monkeypatch.setattr(settings, "trusted_proxy_hops", 0)
     assert main.client_ip(Req()) == "172.18.0.3"
+
+
+def test_refusal_reason_shown_in_dev_but_never_in_prod(monkeypatch):
+    client, _ = make_client(answer="NOT_COVERED")
+    done = events(client.post("/api/ask", json={"question": "Who issues the GCC?"}))[-1][1]
+    assert done["reason"] == "answer rejected: model said not covered"
+    monkeypatch.setattr(settings, "env", "prod")
+    client, _ = make_client(answer="NOT_COVERED")
+    done = events(client.post("/api/ask", json={"question": "Who issues the GCC?"}))[-1][1]
+    assert "reason" not in done

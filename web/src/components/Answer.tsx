@@ -11,6 +11,7 @@ export interface AnswerState {
   status: AnswerStatus | null; // null while streaming
   error: string | null;
   queryId: string | null;
+  reason: string | null; // dev only: why the answer was refused
 }
 
 function Feedback({ queryId }: { queryId: string }) {
@@ -118,6 +119,9 @@ export function Answer({ answer, activeCitation, onOpenCitation }: Props) {
           )}
           {streaming && answer.text && (
             <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-accent align-middle" aria-hidden="true" />
+          )}
+          {answer.reason && (
+            <p className="mt-3 font-mono text-[11px] text-muted">Debug (dev only): {answer.reason}</p>
           )}
           {answer.status === "answered" && answer.standards.length > 0 && (
             <p className="mt-4 border-t border-line pt-3 text-sm text-muted">
