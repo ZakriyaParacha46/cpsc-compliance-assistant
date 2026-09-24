@@ -33,5 +33,15 @@ class Settings(BaseSettings):
     # this (cosine distance, 0 = identical). Tuned with `python -m eval.retrieval`.
     relevance_max_distance: float = 0.61
 
+    # Retrieval balance (see eval results): guidance can't crowd out rules and laws.
+    max_guidance: int = 3
+    max_guidance_per_page: int = 2
+
+    # Visitors (no login): random id in an HTTP-only cookie, backed by the client IP.
+    visitor_cookie: str = "cpsc_vid"
+    # Proxies in front of the API that append to X-Forwarded-For. 0 = none (dev / tunnel).
+    # Prod: 2 (CloudFront, then Caddy), so the real client is the 2nd entry from the end.
+    trusted_proxy_hops: int = 0
+
 
 settings = Settings()

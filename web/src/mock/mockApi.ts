@@ -58,29 +58,33 @@ export async function ask(
     return;
   }
 
+  const query_id = crypto.randomUUID();
+  const done = (status: "answered" | "not_covered" | "off_topic", cited: number[] = [], standards: string[] = []) =>
+    onEvent({ type: "done", query_id, status, cited, standards, usage: usage() });
+
   if (OFF_TOPIC.some((w) => q.includes(w))) {
-    onEvent({ type: "sources", citations: [] });
+    onEvent({ type: "sources", query_id, citations: [] });
     onEvent({
       type: "token",
       text: "I can only answer questions about US consumer product safety (CPSC) rules. This question looks like it falls under another agency or topic, so I can't help with it here.",
     });
-    onEvent({ type: "done", status: "off_topic", usage: usage() });
+    done("off_topic");
     return;
   }
 
   used += 1;
   const sc = scenarios.find((s) => s.match.some((m) => q.includes(m)));
   if (!sc) {
-    onEvent({ type: "sources", citations: [] });
+    onEvent({ type: "sources", query_id, citations: [] });
     onEvent({
       type: "token",
       text: "Not covered. The sources I have don't support an answer to this question, so I won't guess. (In sample mode, only the four example questions have answers.)",
     });
-    onEvent({ type: "done", status: "not_covered", usage: usage() });
+    done("not_covered");
     return;
   }
 
-  onEvent({ type: "sources", citations: sc.citations, standards: sc.standards });
+  onEvent({ type: "sources", query_id, citations: sc.citations });
   await sleep(250);
   // Stream a few words at a time, like the real SSE token events.
   const words = sc.answer.split(/(\s+)/);
@@ -89,5 +93,5 @@ export async function ask(
     onEvent({ type: "token", text: words.slice(i, i + 3).join("") });
     await sleep(35);
   }
-  onEvent({ type: "done", status: "answered", usage: usage() });
+  done("answered", sc.citations.map((c) => c.n), sc.standards);
 }

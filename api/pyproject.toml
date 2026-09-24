@@ -13,6 +13,7 @@ dependencies = [
     "langchain-postgres>=0.0.18",
     "langchain-core>=1.6.4",
     "rank-bm25>=0.2.2",
+    "langchain-aws>=1.7.9",
 ]
 
 [dependency-groups]

@@ -40,7 +40,15 @@ export default function App() {
     abortRef.current = ctrl;
     setQuestion(text);
     setViewer(null);
-    setAnswer({ question: text, text: "", citations: [], standards: [], status: null, error: null });
+    setAnswer({
+      question: text,
+      text: "",
+      citations: [],
+      cited: null,
+      standards: [],
+      status: null,
+      error: null,
+    });
 
     await ask(
       text,
@@ -49,11 +57,11 @@ export default function App() {
           if (!a) return a;
           switch (e.type) {
             case "sources":
-              return { ...a, citations: e.citations, standards: e.standards ?? [] };
+              return { ...a, citations: e.citations };
             case "token":
               return { ...a, text: a.text + e.text };
             case "done":
-              return { ...a, status: e.status };
+              return { ...a, status: e.status, cited: e.cited, standards: e.standards };
             case "error":
               return { ...a, error: e.message };
           }
@@ -78,7 +86,9 @@ export default function App() {
   const sidebar = (
     <Sidebar
       docs={docs}
-      citations={answer?.citations ?? []}
+      citations={
+        answer?.cited ? answer.citations.filter((c) => answer.cited!.includes(c.n)) : []
+      }
       activeDocId={viewer?.docId ?? null}
       activeCitation={viewer?.citation?.n ?? null}
       onOpenCitation={openCitation}

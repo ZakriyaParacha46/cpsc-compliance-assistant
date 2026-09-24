@@ -75,6 +75,10 @@ show: ## Show the chunks of one section: make show S=1263.3 (or S="15 U.S.C. 206
 search: ## Vector search check: make search Q="coin battery warning label"
 	$(RUN_API) python -m ingest search "$(Q)"
 
+ask: ## Ask the running API and watch the stream: make ask Q="who issues the GCC?"
+	@curl -sN -X POST http://127.0.0.1:8000/api/ask -H 'Content-Type: application/json' \
+	  -d "$$(python3 -c 'import json,sys; print(json.dumps({"question": sys.argv[1]}))' "$(Q)")"; echo
+
 eval: ## Retrieval eval: 20 golden questions, vector vs BM25 vs hybrid
 	$(RUN_API) python -m eval.retrieval
 
@@ -121,4 +125,4 @@ ci-local: check image image-smoke lint-workflows lint-infra ## Full CI dry run l
 act: ## Run the pipeline's check jobs in containers via `act` (brew install act)
 	act push -j api-check -j web-check --container-architecture linux/arm64
 
-.PHONY: help setup hooks up web preview ingest-download ingest-dry-run ingest-load ingest-guidance ingest-statutes ingest-stats eval show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act
+.PHONY: help setup hooks up web preview ingest-download ingest-dry-run ingest-load ingest-guidance ingest-statutes ingest-stats ask eval show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act

@@ -3,7 +3,8 @@ import type { AnswerStatus, Citation } from "../types";
 export interface AnswerState {
   question: string;
   text: string;
-  citations: Citation[];
+  citations: Citation[]; // all retrieved sources, numbered
+  cited: number[] | null; // which of them the answer cites (known when done)
   standards: string[];
   status: AnswerStatus | null; // null while streaming
   error: string | null;

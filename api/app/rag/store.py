@@ -111,3 +111,103 @@ def delete_chunks_for(doc_id: str) -> int:
             "DELETE FROM langchain_pg_embedding WHERE cmetadata->>'doc_id' = %s", (doc_id,)
         )
         return cur.rowcount
+
+
+# ---------- app tables: query log and feedback ----------
+
+APP_DDL = """
+CREATE TABLE IF NOT EXISTS query_log (
+    id            uuid PRIMARY KEY,
+    visitor_id    text,
+    ip            text,
+    question      text NOT NULL,
+    status        text NOT NULL,
+    chunk_ids     text[],
+    cited         integer[],
+    best_distance real,
+    latency_ms    integer,
+    tokens_in     integer,
+    tokens_out    integer,
+    rejected      text,
+    created_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS feedback (
+    id         bigserial PRIMARY KEY,
+    query_id   uuid NOT NULL,
+    rating     smallint NOT NULL CHECK (rating IN (-1, 1)),
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+"""
+
+
+def ensure_app_schema() -> None:
+    ensure_schema()
+    with connect() as conn:
+        conn.execute(APP_DDL)
+
+
+def insert_query_log(r: dict[str, Any]) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO query_log (id, visitor_id, ip, question, status, chunk_ids, cited,
+                                   best_distance, latency_ms, tokens_in, tokens_out, rejected)
+            VALUES (%(id)s, %(visitor_id)s, %(ip)s, %(question)s, %(status)s, %(chunk_ids)s,
+                    %(cited)s, %(best_distance)s, %(latency_ms)s, %(tokens_in)s,
+                    %(tokens_out)s, %(rejected)s)
+            """,
+            {
+                "chunk_ids": None,
+                "cited": None,
+                "best_distance": None,
+                "tokens_in": None,
+                "tokens_out": None,
+                "rejected": None,
+                **r,
+            },
+        )
+
+
+def insert_feedback(query_id: str, rating: int) -> None:
+    with connect() as conn:
+        conn.execute("INSERT INTO feedback (query_id, rating) VALUES (%s, %s)", (query_id, rating))
+
+
+# ---------- read side for the UI ----------
+
+_TYPE_ORDER = "CASE source_type WHEN 'rule' THEN 0 WHEN 'law' THEN 1 ELSE 2 END"
+
+
+def list_documents() -> list[dict[str, Any]]:
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT id, source_type, cfr_part, title, url, as_of::text,
+                   jsonb_array_length(sections) AS section_count
+            FROM documents ORDER BY {_TYPE_ORDER}, cfr_part NULLS LAST, title
+            """
+        ).fetchall()
+    keys = ("id", "source_type", "cfr_part", "title", "url", "as_of", "section_count")
+    return [dict(zip(keys, r, strict=True)) for r in rows]
+
+
+def get_document(doc_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id, source_type, cfr_part, title, url, as_of::text, sections "
+            "FROM documents WHERE id = %s",
+            (doc_id,),
+        ).fetchone()
+    if not row:
+        return None
+    keys = ("id", "source_type", "cfr_part", "title", "url", "as_of", "sections")
+    return dict(zip(keys, row, strict=True))
+
+
+def get_chunk(chunk_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id, document, cmetadata FROM langchain_pg_embedding WHERE id = %s",
+            (chunk_id,),
+        ).fetchone()
+    return {"chunk_id": row[0], "text": row[1], "metadata": row[2]} if row else None

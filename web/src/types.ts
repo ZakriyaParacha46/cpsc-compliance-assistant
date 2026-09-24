@@ -27,6 +27,7 @@ export interface Citation {
   n: number;
   chunk_id: string;
   doc_id: string;
+  doc_title?: string;
   section: string;
   source_type: SourceType;
   title: string;
@@ -43,8 +44,16 @@ export interface Usage {
 
 export type AnswerStatus = "answered" | "not_covered" | "off_topic";
 
+/** SSE events from POST /api/ask, in order: sources, token*, done (or error). */
 export type AskEvent =
-  | { type: "sources"; citations: Citation[]; standards?: string[] }
+  | { type: "sources"; query_id: string; citations: Citation[] } // everything retrieved
   | { type: "token"; text: string }
-  | { type: "done"; status: AnswerStatus; usage: Usage }
+  | {
+      type: "done";
+      query_id: string;
+      status: AnswerStatus;
+      cited: number[]; // source numbers the answer actually cites
+      standards: string[]; // paid standards named in cited sources (text not included)
+      usage: Usage;
+    }
   | { type: "error"; code: string; message: string; retry_after?: number };
