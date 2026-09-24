@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CPSC Compliance Assistant - private build server (Phase 2). One EC2 t4g.small reachable
+  only over SSH from your IP. Bedrock access through an instance role, so no AWS keys on the box.
+  Public access (CloudFront, domain) is added later in Phase 5.
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: cpsc-rag
+    Description: The SSH key pair you imported in step 3
+  MyIpCidr:
+    Type: String
+    Description: Your public IP with /32 on the end, e.g. 203.0.113.25/32 (curl -s https://checkip.amazonaws.com)
+    AllowedPattern: ^(\d{1,3}\.){3}\d{1,3}/32$
+    ConstraintDescription: Must look like 203.0.113.25/32
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+    Description: Latest Amazon Linux 2023 for ARM (leave as is)
+
+Resources:
+  # Raw source files and database backups. Private, encrypted, old backups expire.
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-backups
+            Prefix: backups/
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags: [{ Key: Project, Value: cpsc-rag }]
+
+  # What the server is allowed to do in AWS. Credentials rotate automatically.
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Backup way in (Session Manager) if SSH ever breaks, e.g. your IP changes.
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: cpsc-rag-app
+          PolicyDocument:
+            Statement:
+              - Sid: CallBedrockModels
+                Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+                Resource:
+                  - arn:aws:bedrock:*::foundation-model/*
+                  - !Sub "arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*"
+              - Sid: DataBucket
+                Effect: Allow
+                Action: [s3:ListBucket, s3:GetObject, s3:PutObject]
+                Resource: [!GetAtt DataBucket.Arn, !Sub "${DataBucket.Arn}/*"]
+              - Sid: ReadAppSecrets
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cpsc-rag/*"
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  # Firewall: SSH from your IP only. Nothing else gets in.
+  ServerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: cpsc-rag private server - SSH from owner IP only
+      SecurityGroupIngress:
+        - Description: SSH from my IP
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref MyIpCidr
+      Tags: [{ Key: Name, Value: cpsc-rag-ssh }]
+
+  Server:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: t4g.small
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds: [!GetAtt ServerSG.GroupId]
+      MetadataOptions: { HttpTokens: required, HttpPutResponseHopLimit: 2 }
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs: { VolumeSize: 20, VolumeType: gp3, Encrypted: true, DeleteOnTermination: true }
+      Tags:
+        - { Key: Name, Value: cpsc-rag }
+        - { Key: Project, Value: cpsc-rag }
+      # First-boot setup. Log: /var/log/cloud-init-output.log
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -euxo pipefail
+          dnf install -y docker git
+          systemctl enable --now docker
+          usermod -aG docker ec2-user
+          mkdir -p /usr/local/lib/docker/cli-plugins
+          curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+            https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-aarch64
+          chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          # 1 GB swap as headroom on a 2 GB machine
+          dd if=/dev/zero of=/swapfile bs=1M count=1024
+          chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+          echo '/swapfile none swap sw 0 0' >> /etc/fstab
+          mkdir -p /opt/cpsc-rag && chown ec2-user:ec2-user /opt/cpsc-rag
+          echo "setup finished $(date -u)" > /opt/cpsc-rag/READY
+
+  # Fixed public IP, so your SSH command never changes (even after stop/start).
+  ServerIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref Server
+      Tags: [{ Key: Name, Value: cpsc-rag }]
+
+Outputs:
+  PublicIp:
+    Description: Fixed IP of the server
+    Value: !Ref ServerIP
+  SshCommand:
+    Description: Log in from your Mac
+    Value: !Sub "ssh -i ~/.ssh/cpsc-rag ec2-user@${ServerIP}"
+  TunnelCommand:
+    Description: Later, to use the app privately at http://localhost:8000
+    Value: !Sub "ssh -i ~/.ssh/cpsc-rag -N -L 8000:localhost:8000 ec2-user@${ServerIP}"
+  DataBucketName:
+    Description: S3 bucket for raw files and backups
+    Value: !Ref DataBucket
+  InstanceId:
+    Value: !Ref Server

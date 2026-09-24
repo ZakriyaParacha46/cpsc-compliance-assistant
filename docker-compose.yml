@@ -1,0 +1,41 @@
+# Local stack. `make up` = db + api (hot reload). `make prodlike` = prod image + Caddy
+# serving the built frontend and proxying /api, i.e. the same shape as CloudFront -> EC2.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: cpsc
+      POSTGRES_PASSWORD: cpsc
+      POSTGRES_DB: cpsc
+    ports: ["127.0.0.1:5432:5432"] # this machine only
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cpsc"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build: ./api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://cpsc:cpsc@db:5432/cpsc
+      AWS_PROFILE: ${AWS_PROFILE:-default}
+    volumes:
+      - ./api/app:/app/app
+      - ~/.aws:/home/app/.aws:ro # only used when LLM_MODE=bedrock
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  caddy:
+    profiles: [prodlike]
+    image: caddy:2
+    volumes:
+      - ./deploy/Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - ./web/dist:/srv:ro
+    ports: ["8080:80"]
+    depends_on: [api]
+
+volumes:
+  pgdata:

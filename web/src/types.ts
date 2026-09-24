@@ -1,0 +1,49 @@
+export type SourceType = "rule" | "guidance";
+
+export interface Section {
+  id: string; // CFR section number, e.g. "1263.3"
+  heading: string;
+  text: string;
+}
+
+export interface DocSummary {
+  id: string;
+  source_type: SourceType;
+  cfr_part: string | null;
+  title: string;
+  url: string;
+  as_of: string;
+  section_count: number;
+}
+
+export interface DocFull extends Omit<DocSummary, "section_count"> {
+  sections: Section[];
+  note?: string;
+}
+
+/** One numbered source the answer cites. start/end are offsets into the section text. */
+export interface Citation {
+  n: number;
+  chunk_id: string;
+  doc_id: string;
+  section: string;
+  source_type: SourceType;
+  title: string;
+  url: string;
+  start: number;
+  end: number;
+}
+
+export interface Usage {
+  used: number;
+  limit: number;
+  resets_at: string;
+}
+
+export type AnswerStatus = "answered" | "not_covered" | "off_topic";
+
+export type AskEvent =
+  | { type: "sources"; citations: Citation[]; standards?: string[] }
+  | { type: "token"; text: string }
+  | { type: "done"; status: AnswerStatus; usage: Usage }
+  | { type: "error"; code: string; message: string; retry_after?: number };

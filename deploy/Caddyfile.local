@@ -1,0 +1,13 @@
+# Local stand-in for CloudFront: static site + /api/* to the API on one origin.
+:80 {
+	handle /api/* {
+		reverse_proxy api:8000 {
+			flush_interval -1 # don't buffer SSE
+		}
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

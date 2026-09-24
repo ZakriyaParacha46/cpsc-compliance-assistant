@@ -1,0 +1,7 @@
+# Overlay for `make prodlike`: run the api exactly as the prod image does
+# (no --reload, no source mount) behind Caddy on http://localhost:8080.
+services:
+  api:
+    command: !reset null
+    volumes: !override
+      - ~/.aws:/home/app/.aws:ro

@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Dark theme. "paper" is the page ground, "surface" raises panels above it. */
+  --color-paper: #0e1318;
+  --color-surface: #161d25;
+  --color-ink: #e3e8ed;
+  --color-muted: #93a0ad;
+  --color-line: #27313c;
+  --color-accent: #82aee8;
+  --color-on-accent: #0e1318;
+  --color-accent-soft: #1b2939;
+  --color-rule: #8db4ea;
+  --color-rule-soft: #1d2b3d;
+  --color-guide: #7cc7b0;
+  --color-guide-soft: #15302a;
+  --color-warn: #e8b85c;
+  --color-warn-soft: #30260f;
+  --color-mark: #5c4a12;
+  --color-scrim: #000000;
+}
+
+html {
+  color-scheme: dark;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+mark {
+  background: var(--color-mark);
+  color: inherit;
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px var(--color-mark);
+}

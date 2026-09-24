@@ -1,0 +1,37 @@
+# Runs on the EC2 instance from /opt/cpsc-rag. The deploy job copies this file and
+# deploy/Caddyfile there and sets API_IMAGE in .env; secrets come from SSM (scripts/remote-deploy.sh).
+# Memory caps keep everything inside a t4g.small (2 GB).
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    env_file: [.env]
+    command: postgres -c shared_buffers=128MB -c effective_cache_size=256MB -c max_connections=30
+    volumes: [pgdata:/var/lib/postgresql/data]
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 5s
+      retries: 20
+
+  api:
+    image: ${API_IMAGE}
+    restart: unless-stopped
+    env_file: [.env]
+    mem_limit: 768m
+    depends_on:
+      db: { condition: service_healthy }
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    mem_limit: 64m
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  caddy_data:
