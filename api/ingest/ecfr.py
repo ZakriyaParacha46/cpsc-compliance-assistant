@@ -12,18 +12,26 @@ TITLE = 16
 # CPSC parts in scope (PRD: Day 1 milestone).
 PARTS = {
     "1107": "Testing and labeling pertaining to product certification",
+    "1109": "Component part testing and certification",
     "1110": "Certificates of compliance",
     "1115": "Substantial product hazard reports",
+    "1200": "Definition of children's product",
     "1250": "Safety standard for toys",
     "1263": "Button cell or coin batteries (Reese's Law)",
     "1303": "Lead-containing paint",
     "1307": "Phthalates in children's toys and child care articles",
     "1500": "Hazardous substances (FHSA regulations)",
+    "1700": "Poison prevention packaging (child-resistant packaging)",
 }
 
 # Block-level tags whose text becomes a paragraph. Table rows are handled separately.
 _BLOCK_TAGS = {"P", "FP", "HD1", "HD2", "HD3", "HED", "PSPACE", "CAPTION"}
 _ACRONYMS = ["CPSC", "CPSIA", "CPSA", "FHSA", "ASTM", "ANSI", "UL", "U.S.", "FR"]
+_PROPER_NOUNS = [
+    "Consumer Product Safety Act",
+    "Federal Hazardous Substances Act",
+    "Poison Prevention Packaging Act",
+]
 
 
 @dataclass
@@ -57,6 +65,8 @@ def _sentence_case(heading: str) -> str:
     s = s[:1].upper() + s[1:].lower()
     for a in _ACRONYMS:
         s = s.replace(a.lower(), a) if f" {a.lower()} " in f" {s} " else s
+    for name in _PROPER_NOUNS:
+        s = s.replace(name.lower(), name)
     return s
 
 

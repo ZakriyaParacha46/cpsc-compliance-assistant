@@ -35,6 +35,15 @@ def test_parses_part_metadata():
     assert doc.as_of == "2026-09-22"
 
 
+def test_title_keeps_law_names_capitalised():
+    xml = XML.replace(
+        b"SAFETY STANDARD FOR WIDGETS",
+        b"DEFINITION OF CHILDREN'S PRODUCT UNDER THE CONSUMER PRODUCT SAFETY ACT",
+    )
+    doc = parse_part(xml, "9999", "2026-09-22")
+    assert doc.title == "Definition of children's product under the Consumer Product Safety Act"
+
+
 def test_sections_keep_numbers_headings_and_paragraphs():
     doc = parse_part(XML, "9999", "2026-09-22")
     s1 = doc.sections[0]
