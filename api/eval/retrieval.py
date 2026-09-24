@@ -21,13 +21,15 @@ from app.rag.embeddings import get_embeddings
 from app.rag.retriever import HybridRetriever, KeywordIndex
 from eval.golden import GOLDEN, is_binding
 
-# name, mode, one chunk per section
+# name, retriever settings
 CONFIGS = [
-    ("vector, no dedupe (step 7)", "vector", False),
-    ("vector", "vector", True),
-    ("bm25", "bm25", True),
-    ("hybrid", "hybrid", True),
+    ("vector, no dedupe (step 7)", {"mode": "vector", "one_per_section": False}),
+    ("vector", {"mode": "vector"}),
+    ("bm25", {"mode": "bm25"}),
+    ("hybrid", {"mode": "hybrid"}),
+    ("hybrid + balanced", {"mode": "hybrid", "max_guidance": 3, "max_guidance_per_page": 2}),
 ]
+BEST = "hybrid + balanced"
 
 
 class CachedEmbeddings(Embeddings):
@@ -119,10 +121,8 @@ def main() -> None:
     print(f"Index: {len(index.docs)} chunks. Threshold: best cosine distance > {args.threshold}\n")
 
     summaries, details = [], {}
-    for name, mode, dedupe in CONFIGS:
-        retriever = HybridRetriever(
-            vector_store=vs, keyword_index=index, mode=mode, k=6, one_per_section=dedupe
-        )
+    for name, opts in CONFIGS:
+        retriever = HybridRetriever(vector_store=vs, keyword_index=index, k=6, **opts)
         results = run_config(retriever)
         details[name] = results
         summaries.append(summarize(name, results, args.threshold))
@@ -139,8 +139,8 @@ def main() -> None:
     table = "\n".join(lines)
     print(table)
 
-    best = details["hybrid"]
-    print("\nPer question (hybrid):")
+    best = details[BEST]
+    print(f"\nPer question ({BEST}):")
     for r in best:
         mark = "✓" if (r.rank if r.in_scope else (r.best_distance or 1) > args.threshold) else "✗"
         where = f"rank {r.rank}" if r.rank else ("—" if r.in_scope else "off-topic")

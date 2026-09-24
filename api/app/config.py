@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     max_chunks: int = 6
     # "Not covered" without calling the model when even the closest chunk is further than
     # this (cosine distance, 0 = identical). Tuned with `python -m eval.retrieval`.
-    relevance_max_distance: float = 0.55
+    relevance_max_distance: float = 0.61
 
 
 settings = Settings()

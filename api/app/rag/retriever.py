@@ -65,9 +65,14 @@ class HybridRetriever(BaseRetriever):
     keyword_index: KeywordIndex
     mode: Mode = "hybrid"
     k: int = 6
-    fetch_k: int = 30  # candidates taken from each method before fusing
+    fetch_k: int = 50  # candidates taken from each method before fusing
     rrf_k: int = 60  # standard RRF constant: dampens the gap between rank 1 and rank 2
     one_per_section: bool = True
+    # Source balance. FAQ pages are phrased like questions, so they out-rank the legal text
+    # that actually states the obligation. Cap guidance so rules and laws get slots too.
+    # None = no cap. Caps only bite while there are rule/law candidates left to fill with.
+    max_guidance: int | None = None
+    max_guidance_per_page: int | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -84,16 +89,41 @@ class HybridRetriever(BaseRetriever):
         else:
             ranked = self._fuse([vector_docs, self.keyword_index.search(query, self.fetch_k)])
 
-        picked, seen = [], set()
+        return SearchResult(docs=self._select(ranked), best_distance=best, distances=distances)
+
+    def _select(self, ranked: list[Document]) -> list[Document]:
+        """Take the top k in rank order: dedupe by section, then apply the guidance caps."""
+        candidates, seen = [], set()
         for d in ranked:
             key = section_key(d.metadata) if self.one_per_section else chunk_key(d.metadata)
-            if key in seen:
-                continue
-            seen.add(key)
-            picked.append(d)
+            if key not in seen:
+                seen.add(key)
+                candidates.append(d)
+
+        picked: list[Document] = []
+        deferred: list[Document] = []  # guidance over a cap: used only if nothing else is left
+        per_page: dict[str, int] = {}
+        n_guidance = 0
+        for d in candidates:
             if len(picked) == self.k:
                 break
-        return SearchResult(docs=picked, best_distance=best, distances=distances)
+            if d.metadata.get("source_type") == "guidance":
+                page = d.metadata["doc_id"]
+                over_total = self.max_guidance is not None and n_guidance >= self.max_guidance
+                over_page = (
+                    self.max_guidance_per_page is not None
+                    and per_page.get(page, 0) >= self.max_guidance_per_page
+                )
+                if over_total or over_page:
+                    deferred.append(d)
+                    continue
+                n_guidance += 1
+                per_page[page] = per_page.get(page, 0) + 1
+            picked.append(d)
+        picked += deferred[: self.k - len(picked)]
+        # Keep the fused ranking order so the best sources are numbered first.
+        order = {id(d): i for i, d in enumerate(candidates)}
+        return sorted(picked, key=lambda d: order[id(d)])
 
     def _fuse(self, rankings: list[list[Document]]) -> list[Document]:
         """Reciprocal rank fusion: score = sum of 1 / (rrf_k + rank) across rankings."""

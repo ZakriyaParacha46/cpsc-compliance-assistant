@@ -87,3 +87,38 @@ def test_golden_set_is_well_formed():
             else:
                 assert re.fullmatch(r"1\d{3}\.\d+|15 U\.S\.C\. \d+[a-z]*", e), e
         assert any(is_binding(e) for e in g["expect"]) or g["expect"], g["q"]
+
+
+def guide(page: str, section: str, text: str) -> Document:
+    d = chunk(page, section, text)
+    d.metadata["source_type"] = "guidance"
+    return d
+
+
+def test_guidance_caps_make_room_for_rules_and_keep_rank_order():
+    g = [guide("cpsc-faq-gcc", f"cpsc-faq-gcc#{i}", f"gcc question {i}") for i in range(4)]
+    g += [guide("cpsc-gcc", "cpsc-gcc#1", "gcc page")]
+    rules = [CHUNKS[0], CHUNKS[2], CHUNKS[3]]
+    ranked = g + rules  # guidance out-ranks every rule, as with FAQ-phrased pages
+    r = HybridRetriever(
+        vector_store=StubVectorStore([]),
+        keyword_index=KeywordIndex([]),
+        k=6,
+        max_guidance=3,
+        max_guidance_per_page=2,
+    )
+    picked = r._select(ranked)
+    kinds = [d.metadata["source_type"] for d in picked]
+    pages = [d.metadata["doc_id"] for d in picked if d.metadata["source_type"] == "guidance"]
+    assert len(picked) == 6
+    assert kinds.count("guidance") == 3  # capped: rules got the other 3 slots
+    assert pages.count("cpsc-faq-gcc") == 2  # at most 2 from one page
+    assert picked == sorted(picked, key=ranked.index)  # still in fused rank order
+
+
+def test_caps_fall_back_to_guidance_when_no_rules_left():
+    g = [guide("p", f"p#{i}", "x") for i in range(5)]
+    r = HybridRetriever(
+        vector_store=StubVectorStore([]), keyword_index=KeywordIndex([]), k=4, max_guidance=1
+    )
+    assert len(r._select(g)) == 4  # nothing else to use, so deferred guidance fills in

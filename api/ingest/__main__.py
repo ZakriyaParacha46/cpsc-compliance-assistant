@@ -175,7 +175,12 @@ def cmd_search(args: argparse.Namespace) -> None:
 
     vs = store.vector_store(get_embeddings())
     retriever = HybridRetriever(
-        vector_store=vs, keyword_index=KeywordIndex(store.all_chunks()), mode=args.mode, k=args.k
+        vector_store=vs,
+        keyword_index=KeywordIndex(store.all_chunks()),
+        mode=args.mode,
+        k=args.k,
+        max_guidance=3,
+        max_guidance_per_page=2,
     )
     res = retriever.search(args.query)
     limit = settings.relevance_max_distance
