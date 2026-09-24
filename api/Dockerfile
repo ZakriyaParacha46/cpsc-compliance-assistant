@@ -9,6 +9,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY app ./app
 COPY ingest ./ingest
+COPY eval ./eval
 ENV PATH="/app/.venv/bin:$PATH"
 
 # uid 1000 matches ec2-user, so files written to mounted folders (data/) stay yours.

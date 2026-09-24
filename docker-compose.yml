@@ -24,6 +24,7 @@ services:
     volumes:
       - ./api/app:/app/app
       - ./api/ingest:/app/ingest
+      - ./api/eval:/app/eval
       - ./data:/app/data
       - ~/.aws:/home/app/.aws:ro
     ports: ["127.0.0.1:8000:8000"]

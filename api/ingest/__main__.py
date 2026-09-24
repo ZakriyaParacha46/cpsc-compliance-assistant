@@ -7,7 +7,7 @@ python -m ingest guidance            # same for the CPSC guidance pages in data/
 python -m ingest statutes            # CPSA + FHSA from the U.S. Code (govinfo)
 python -m ingest stats               # what's in the database
 python -m ingest show 1263.3         # the chunks for one section
-python -m ingest search "coin battery warning label"   # quick vector search check
+python -m ingest search "coin battery warning label"   # hybrid search check (--mode vector|bm25)
 """
 
 import argparse
@@ -171,19 +171,29 @@ def cmd_show(args: argparse.Namespace) -> None:
 
 
 def cmd_search(args: argparse.Namespace) -> None:
-    emb = get_embeddings()
-    vs = store.vector_store(emb)
-    results = vs.similarity_search_with_score(args.query, k=args.k)
-    print(f'Top {args.k} chunks for: "{args.query}"  (cosine distance: lower = closer)\n')
-    for doc, dist in results:
-        m = doc.metadata
+    from app.rag.retriever import HybridRetriever, KeywordIndex
+
+    vs = store.vector_store(get_embeddings())
+    retriever = HybridRetriever(
+        vector_store=vs, keyword_index=KeywordIndex(store.all_chunks()), mode=args.mode, k=args.k
+    )
+    res = retriever.search(args.query)
+    limit = settings.relevance_max_distance
+    relevant = res.best_distance is not None and res.best_distance <= limit
+    verdict = "relevant" if relevant else "NOT COVERED"
+    print(f'{args.mode} search, top {args.k} for: "{args.query}"')
+    print(f"closest meaning distance {res.best_distance:.3f} ({verdict}; threshold {limit})\n")
+    for d in res.docs:
+        m = d.metadata
         if m["source_type"] == "rule":
             where = f"16 CFR {m['section']}"
         elif m["source_type"] == "law":
             where = m["section"]  # already "15 U.S.C. 2063"
         else:
             where = m["part_title"][:40]
-        print(f"{dist:.3f}  {m['source_type']:<8} {where:<42} {m['title'][:60]}")
+        dist = res.distances.get(f"{m['doc_id']}|{m['section']}|{m.get('chunk_index', 0)}")
+        shown = f"{dist:.3f}" if dist is not None else "  —  "
+        print(f"{shown}  {m['source_type']:<8} {where:<42} {m['title'][:60]}")
 
 
 def main() -> None:
@@ -229,6 +239,7 @@ def main() -> None:
     se = sub.add_parser("search", help="vector search sanity check")
     se.add_argument("query")
     se.add_argument("-k", type=int, default=6)
+    se.add_argument("--mode", choices=["hybrid", "vector", "bm25"], default="hybrid")
     se.set_defaults(fn=cmd_search)
 
     args = p.parse_args()

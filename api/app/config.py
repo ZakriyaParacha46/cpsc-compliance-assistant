@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     max_question_chars: int = 500
     max_output_tokens: int = 800
     max_chunks: int = 6
+    # "Not covered" without calling the model when even the closest chunk is further than
+    # this (cosine distance, 0 = identical). Tuned with `python -m eval.retrieval`.
+    relevance_max_distance: float = 0.55
 
 
 settings = Settings()

@@ -3,6 +3,7 @@
 from typing import Any
 
 import psycopg
+from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_postgres import PGVector
 from psycopg.types.json import Jsonb
@@ -86,6 +87,21 @@ def upsert_document(doc: dict[str, Any]) -> None:
             """,
             {**doc, "sections": Jsonb(doc["sections"])},
         )
+
+
+def all_chunks() -> list[Document]:
+    """Every stored chunk in the collection, for building the in-memory BM25 index."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT e.document, e.cmetadata
+            FROM langchain_pg_embedding e
+            JOIN langchain_pg_collection c ON c.uuid = e.collection_id
+            WHERE c.name = %s
+            """,
+            (settings.collection_name,),
+        ).fetchall()
+    return [Document(page_content=text, metadata=meta) for text, meta in rows]
 
 
 def delete_chunks_for(doc_id: str) -> int:
