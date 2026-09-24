@@ -4,6 +4,8 @@
 
 **Live: https://cpsc.zakriyaparacha.com**
 
+![Asking who issues the General Certificate of Conformity, then opening a citation: the source page opens with the exact passage highlighted](docs/demo.gif)
+
 Ask US consumer product safety (CPSC) compliance questions in plain English and get answers where **every claim is cited** to the exact regulation, statute or CPSC guidance page it came from. Each source is labelled **Rule** (binding regulation), **Law** (binding statute) or **Guidance** (non-binding), and clicking a citation opens the source with the exact passage highlighted.
 
 It's a retrieval-augmented generation (RAG) system on AWS: FastAPI and LangChain retrieve passages from PostgreSQL + pgvector with hybrid BM25 + vector search, and Claude Haiku 4.5 on Amazon Bedrock writes the answer **only** from those passages, with code that verifies every citation before the answer reaches the user.

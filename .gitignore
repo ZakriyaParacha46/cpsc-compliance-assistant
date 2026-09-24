@@ -10,3 +10,4 @@ web/dist/
 data/raw/
 .DS_Store
 .deployed-sha
+*.tsbuildinfo
