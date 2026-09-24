@@ -20,9 +20,14 @@ def build_chunks(doc: Document) -> list[Chunk]:
         spans = chunk_section(sec.text)
         for i, span in enumerate(spans):
             body = sec.text[span.start : span.end]
-            # A short header gives each chunk its context: which rule, which section.
+            # A short header gives each chunk its context: which rule or page, which section.
             # It helps both the embedding and the model's citations.
-            header = f"16 CFR {sec.heading}\nPart {doc.cfr_part}: {doc.title}"
+            if doc.source_type == "rule":
+                header = f"16 CFR {sec.heading}\nPart {doc.cfr_part}: {doc.title}"
+            elif sec.heading == doc.title:
+                header = f"CPSC guidance (non-binding): {doc.title}"
+            else:
+                header = f"CPSC guidance (non-binding): {doc.title}\n{sec.heading}"
             chunks.append(
                 Chunk(
                     id=f"{doc.id}:{sec.id}:{i}",

@@ -60,6 +60,9 @@ ingest-dry-run: ## Parse and chunk only; nothing embedded or stored
 ingest-load: ## Parse, chunk, embed with Titan, store in Postgres
 	$(RUN_API) python -m ingest load
 
+ingest-guidance: ## Chunk, embed and store the CPSC guidance pages in data/cpsc-html
+	$(RUN_API) python -m ingest guidance
+
 ingest-stats: ## Show what's stored in the database
 	$(RUN_API) python -m ingest stats
 
@@ -112,4 +115,4 @@ ci-local: check image image-smoke lint-workflows lint-infra ## Full CI dry run l
 act: ## Run the pipeline's check jobs in containers via `act` (brew install act)
 	act push -j api-check -j web-check --container-architecture linux/arm64
 
-.PHONY: help setup hooks up web preview ingest-download ingest-dry-run ingest-load ingest-stats show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act
+.PHONY: help setup hooks up web preview ingest-download ingest-dry-run ingest-load ingest-guidance ingest-stats show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act

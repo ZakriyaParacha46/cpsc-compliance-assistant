@@ -3,6 +3,7 @@
 python -m ingest download            # fetch 16 CFR parts from eCFR into data/raw (+ S3)
 python -m ingest load --dry-run      # parse + chunk only, print what would be stored
 python -m ingest load                # parse, chunk, embed with Titan, store in Postgres
+python -m ingest guidance            # same for the CPSC guidance pages in data/cpsc-html
 python -m ingest stats               # what's in the database
 python -m ingest show 1263.3         # the chunks for one section
 python -m ingest search "coin battery warning label"   # quick vector search check
@@ -18,7 +19,7 @@ import boto3
 from app.config import settings
 from app.rag import store
 from app.rag.embeddings import TitanEmbeddings, get_embeddings
-from ingest import ecfr
+from ingest import cpsc_guidance, ecfr
 from ingest.build import build_chunks
 from ingest.chunking import estimate_tokens
 
@@ -56,21 +57,20 @@ def _latest() -> tuple[str, Path]:
     return as_of, raw_dir() / as_of
 
 
-def cmd_load(args: argparse.Namespace) -> None:
-    as_of, src = _latest()
-    print(f"Loading 16 CFR as of {as_of} from {src}/")
-    docs, all_chunks = [], []
-    for part in args.parts:
-        doc = ecfr.parse_part((src / f"part-{part}.xml").read_bytes(), part, as_of)
-        chunks = build_chunks(doc)
-        tokens = sum(estimate_tokens(c.text) for c in chunks)
-        n_sec, n_chunks = len(doc.sections), len(chunks)
-        print(f"  part {part}: {n_sec:3d} sections -> {n_chunks:3d} chunks  ~{tokens:>7,} tokens")
-        docs.append(doc)
-        all_chunks.append(chunks)
-    total = sum(len(c) for c in all_chunks)
-    print(f"Total: {sum(len(d.sections) for d in docs)} sections, {total} chunks")
-    if args.dry_run:
+def _report(label: str, doc: ecfr.Document, chunks: list) -> None:
+    tokens = sum(estimate_tokens(c.text) for c in chunks)
+    n_sec, n_chunks = len(doc.sections), len(chunks)
+    print(f"  {label:<44} {n_sec:3d} sections -> {n_chunks:3d} chunks  ~{tokens:>7,} tokens")
+
+
+def _store(docs: list[ecfr.Document], dry_run: bool) -> None:
+    """Chunk, embed and store documents. Re-running replaces each document's old chunks."""
+    batches = [(doc, build_chunks(doc)) for doc in docs]
+    for doc, chunks in batches:
+        _report(f"part {doc.cfr_part}" if doc.cfr_part else doc.title[:44], doc, chunks)
+    n_sec = sum(len(d.sections) for d in docs)
+    print(f"Total: {n_sec} sections, {sum(len(c) for _, c in batches)} chunks")
+    if dry_run:
         print("Dry run: nothing embedded or stored.")
         return
 
@@ -78,7 +78,7 @@ def cmd_load(args: argparse.Namespace) -> None:
     emb = get_embeddings()
     vs = store.vector_store(emb)
     started = time.time()
-    for doc, chunks in zip(docs, all_chunks, strict=True):
+    for doc, chunks in batches:
         t0 = time.time()
         vectors = emb.embed_documents([c.text for c in chunks])
         removed = store.delete_chunks_for(doc.id)
@@ -90,14 +90,28 @@ def cmd_load(args: argparse.Namespace) -> None:
         )
         store.upsert_document(doc.to_dict())
         note = f" (replaced {removed})" if removed else ""
-        print(
-            f"  stored part {doc.cfr_part}: {len(chunks)} chunks in {time.time() - t0:.1f}s{note}"
-        )
+        print(f"  stored {doc.id}: {len(chunks)} chunks in {time.time() - t0:.1f}s{note}")
     store.ensure_vector_index()
 
     print(f"Done in {time.time() - started:.0f}s.")
     if isinstance(emb, TitanEmbeddings):
         print(f"Titan tokens: {emb.tokens_used:,}  cost: ${emb.cost_usd:.4f}")
+
+
+def cmd_load(args: argparse.Namespace) -> None:
+    as_of, src = _latest()
+    print(f"Loading 16 CFR as of {as_of} from {src}/")
+    docs = [
+        ecfr.parse_part((src / f"part-{part}.xml").read_bytes(), part, as_of) for part in args.parts
+    ]
+    _store(docs, args.dry_run)
+
+
+def cmd_guidance(args: argparse.Namespace) -> None:
+    folder = Path(settings.data_dir) / "cpsc-html"
+    docs = cpsc_guidance.load_folder(folder)
+    print(f"Loading {len(docs)} CPSC guidance pages (saved {docs[0].as_of}) from {folder}/")
+    _store(docs, args.dry_run)
 
 
 def cmd_stats(_: argparse.Namespace) -> None:
@@ -170,10 +184,14 @@ def main() -> None:
     ld.add_argument("--dry-run", action="store_true", help="parse and chunk only")
     ld.set_defaults(fn=cmd_load)
 
+    g = sub.add_parser("guidance", help="parse, chunk, embed and store CPSC guidance pages")
+    g.add_argument("--dry-run", action="store_true", help="parse and chunk only")
+    g.set_defaults(fn=cmd_guidance)
+
     sub.add_parser("stats", help="summary of stored chunks").set_defaults(fn=cmd_stats)
 
     sh = sub.add_parser("show", help="print the chunks of one section")
-    sh.add_argument("section", help="e.g. 1263.3")
+    sh.add_argument("section", help="e.g. 1263.3 or cpsc-faq-cpc#2")
     sh.add_argument("--chars", type=int, default=600)
     sh.set_defaults(fn=cmd_show)
 
