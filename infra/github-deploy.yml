@@ -8,6 +8,13 @@ Parameters:
     Type: String
     Default: ZakriyaParacha46/cpsc-compliance-assistant
     Description: owner/repo allowed to deploy
+  GitHubImmutableRepo:
+    Type: String
+    Default: ZakriyaParacha46@82748498/cpsc-compliance-assistant@1385287256
+    Description: >
+      owner@owner_id/repo@repo_id. GitHub's immutable OIDC subjects include these IDs, so a
+      deleted-and-recreated repo with the same name still can't deploy. See
+      gh api repos/OWNER/REPO/actions/oidc/customization/sub
   InstanceId:
     Type: AWS::EC2::Instance::Id
     Description: The server (cpsc-rag-dev stack, Outputs, InstanceId)
@@ -46,7 +53,10 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
                 # Only this repo's "production" environment, which only main may deploy to.
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepo}:environment:production"
+                # First form: GitHub's immutable subject (repo and owner IDs); second: legacy.
+                token.actions.githubusercontent.com:sub:
+                  - !Sub "repo:${GitHubImmutableRepo}:environment:production"
+                  - !Sub "repo:${GitHubRepo}:environment:production"
       Policies:
         - PolicyName: deploy-via-ssm
           PolicyDocument:
