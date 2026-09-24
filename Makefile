@@ -63,11 +63,14 @@ ingest-load: ## Parse, chunk, embed with Titan, store in Postgres
 ingest-guidance: ## Chunk, embed and store the CPSC guidance pages in data/cpsc-html
 	$(RUN_API) python -m ingest guidance
 
+ingest-statutes: ## Download, chunk, embed and store the CPSA and FHSA
+	$(RUN_API) python -m ingest statutes
+
 ingest-stats: ## Show what's stored in the database
 	$(RUN_API) python -m ingest stats
 
-show: ## Show the chunks of one section: make show S=1263.3
-	$(RUN_API) python -m ingest show $(S)
+show: ## Show the chunks of one section: make show S=1263.3 (or S="15 U.S.C. 2063")
+	$(RUN_API) python -m ingest show "$(S)"
 
 search: ## Vector search check: make search Q="coin battery warning label"
 	$(RUN_API) python -m ingest search "$(Q)"
@@ -115,4 +118,4 @@ ci-local: check image image-smoke lint-workflows lint-infra ## Full CI dry run l
 act: ## Run the pipeline's check jobs in containers via `act` (brew install act)
 	act push -j api-check -j web-check --container-architecture linux/arm64
 
-.PHONY: help setup hooks up web preview ingest-download ingest-dry-run ingest-load ingest-guidance ingest-stats show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act
+.PHONY: help setup hooks up web preview ingest-download ingest-dry-run ingest-load ingest-guidance ingest-statutes ingest-stats show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act

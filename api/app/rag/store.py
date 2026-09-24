@@ -13,7 +13,7 @@ from app.rag.embeddings import DIMENSIONS
 DOCUMENTS_DDL = """
 CREATE TABLE IF NOT EXISTS documents (
     id          text PRIMARY KEY,
-    source_type text NOT NULL CHECK (source_type IN ('rule', 'guidance')),
+    source_type text NOT NULL,
     cfr_part    text,
     title       text NOT NULL,
     url         text NOT NULL,
@@ -50,10 +50,21 @@ def vector_store(embeddings: Embeddings) -> PGVector:
     )
 
 
+SOURCE_TYPES = ("rule", "law", "guidance")
+
+# Re-created on every run so existing databases pick up new source types.
+SOURCE_TYPE_CHECK = f"""
+ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_source_type_check;
+ALTER TABLE documents ADD CONSTRAINT documents_source_type_check
+    CHECK (source_type IN {SOURCE_TYPES!r});
+"""
+
+
 def ensure_schema() -> None:
     with connect() as conn:
         conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
         conn.execute(DOCUMENTS_DDL)
+        conn.execute(SOURCE_TYPE_CHECK)
 
 
 def ensure_vector_index() -> None:

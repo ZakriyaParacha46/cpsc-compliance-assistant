@@ -1,4 +1,5 @@
-export type SourceType = "rule" | "guidance";
+/** rule = 16 CFR regulation, law = statute (U.S. Code), guidance = CPSC explainer pages. */
+export type SourceType = "rule" | "law" | "guidance";
 
 export interface Section {
   id: string; // CFR section number, e.g. "1263.3"

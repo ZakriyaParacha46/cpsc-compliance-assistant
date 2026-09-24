@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     data_dir: str = "data"  # raw downloads live under data/raw/
     data_bucket: str = ""  # S3 bucket for raw copies and backups; empty = local only
     collection_name: str = "cpsc"  # pgvector collection
+    govinfo_api_key: str = "DEMO_KEY"  # api.data.gov key; DEMO_KEY is enough for a few calls
 
     # Usage limits (PRD: Usage limits per user)
     limit_per_visitor_day: int = 20

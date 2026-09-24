@@ -34,7 +34,7 @@ function AnswerText({ text, citations, activeCitation, onOpenCitation }: {
               <button
                 key={j}
                 onClick={() => onOpenCitation(c)}
-                title={`16 CFR ${c.section}`}
+                title={c.source_type === "rule" ? `16 CFR ${c.section}` : c.title}
                 className={`mx-0.5 inline-flex -translate-y-0.5 items-center rounded px-1 font-mono text-[11px] font-medium leading-4 transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
                   activeCitation === c.n ? "bg-accent text-on-accent" : "bg-accent-soft text-accent hover:bg-accent hover:text-on-accent"
                 }`}

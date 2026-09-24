@@ -20,7 +20,8 @@ export function Sidebar({ docs, citations, activeDocId, activeCitation, onOpenCi
       (d) => !f || d.title.toLowerCase().includes(f) || (d.cfr_part ?? "").includes(f),
     );
     return [
-      { label: "Rules", items: shown.filter((d) => d.source_type === "rule") },
+      { label: "Rules (16 CFR)", items: shown.filter((d) => d.source_type === "rule") },
+      { label: "Laws (U.S. Code)", items: shown.filter((d) => d.source_type === "law") },
       { label: "Guidance", items: shown.filter((d) => d.source_type === "guidance") },
     ];
   }, [docs, filter]);
@@ -49,7 +50,9 @@ export function Sidebar({ docs, citations, activeDocId, activeCitation, onOpenCi
                   <span className="flex min-w-0 flex-col gap-1">
                     <span className="flex items-center gap-2">
                       <SourceBadge type={c.source_type} />
-                      <span className="font-mono text-xs text-muted">16 CFR {c.section}</span>
+                      <span className="font-mono text-xs text-muted">
+                        {c.source_type === "rule" ? `16 CFR ${c.section}` : c.source_type === "law" ? c.section : "cpsc.gov"}
+                      </span>
                     </span>
                     <span className="line-clamp-2 text-[13px] leading-snug">
                       {c.title.replace(/^§\s*[\d.]+\s*/, "")}

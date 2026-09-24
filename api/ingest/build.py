@@ -24,6 +24,8 @@ def build_chunks(doc: Document) -> list[Chunk]:
             # It helps both the embedding and the model's citations.
             if doc.source_type == "rule":
                 header = f"16 CFR {sec.heading}\nPart {doc.cfr_part}: {doc.title}"
+            elif doc.source_type == "law":
+                header = f"{sec.heading}\n{doc.title} (statute)"
             elif sec.heading == doc.title:
                 header = f"CPSC guidance (non-binding): {doc.title}"
             else:

@@ -52,7 +52,8 @@ export function DocViewer({ docId, citation, onClose }: Props) {
               <h2 className="font-serif text-lg font-semibold leading-tight text-balance">{doc.title}</h2>
               {link && (
                 <a href={link} target="_blank" rel="noreferrer" className="text-sm text-accent hover:underline">
-                  {citation ? `Open § ${citation.section}` : "Open"} on {doc.source_type === "rule" ? "eCFR" : "cpsc.gov"} ↗
+                  {citation && doc.source_type === "rule" ? `Open § ${citation.section}` : "Open"} on{" "}
+                  {{ rule: "eCFR", law: "govinfo.gov", guidance: "cpsc.gov" }[doc.source_type]} ↗
                 </a>
               )}
             </>

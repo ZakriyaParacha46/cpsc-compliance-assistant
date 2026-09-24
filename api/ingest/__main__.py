@@ -4,6 +4,7 @@ python -m ingest download            # fetch 16 CFR parts from eCFR into data/ra
 python -m ingest load --dry-run      # parse + chunk only, print what would be stored
 python -m ingest load                # parse, chunk, embed with Titan, store in Postgres
 python -m ingest guidance            # same for the CPSC guidance pages in data/cpsc-html
+python -m ingest statutes            # CPSA + FHSA from the U.S. Code (govinfo)
 python -m ingest stats               # what's in the database
 python -m ingest show 1263.3         # the chunks for one section
 python -m ingest search "coin battery warning label"   # quick vector search check
@@ -19,7 +20,7 @@ import boto3
 from app.config import settings
 from app.rag import store
 from app.rag.embeddings import TitanEmbeddings, get_embeddings
-from ingest import cpsc_guidance, ecfr
+from ingest import cpsc_guidance, ecfr, usc
 from ingest.build import build_chunks
 from ingest.chunking import estimate_tokens
 
@@ -114,6 +115,25 @@ def cmd_guidance(args: argparse.Namespace) -> None:
     _store(docs, args.dry_run)
 
 
+def cmd_statutes(args: argparse.Namespace) -> None:
+    dest = Path(settings.data_dir) / "raw" / "usc" / usc.EDITION
+    dest.mkdir(parents=True, exist_ok=True)
+    with ecfr.make_client() as client:
+        for chapter in usc.LAWS:
+            path = dest / f"title15-chap{chapter}.htm"
+            if args.refresh or not path.exists():
+                usc.download_chapter(client, chapter, dest, settings.govinfo_api_key)
+                print(
+                    f"  downloaded 15 U.S.C. chapter {chapter} ({path.stat().st_size // 1024} KB)"
+                )
+    docs = [
+        usc.parse_chapter((dest / f"title15-chap{ch}.htm").read_text(encoding="utf-8"), ch)
+        for ch in usc.LAWS
+    ]
+    print(f"Loading {len(docs)} statutes, U.S. Code {usc.EDITION} edition, as of {docs[0].as_of}")
+    _store(docs, args.dry_run)
+
+
 def cmd_stats(_: argparse.Namespace) -> None:
     with store.connect() as conn:
         rows = conn.execute(
@@ -157,7 +177,13 @@ def cmd_search(args: argparse.Namespace) -> None:
     print(f'Top {args.k} chunks for: "{args.query}"  (cosine distance: lower = closer)\n')
     for doc, dist in results:
         m = doc.metadata
-        print(f"{dist:.3f}  {m['source_type']:<8} 16 CFR {m['section']:<10} {m['title'][:70]}")
+        if m["source_type"] == "rule":
+            where = f"16 CFR {m['section']}"
+        elif m["source_type"] == "law":
+            where = m["section"]  # already "15 U.S.C. 2063"
+        else:
+            where = m["part_title"][:40]
+        print(f"{dist:.3f}  {m['source_type']:<8} {where:<42} {m['title'][:60]}")
 
 
 def main() -> None:
@@ -188,10 +214,15 @@ def main() -> None:
     g.add_argument("--dry-run", action="store_true", help="parse and chunk only")
     g.set_defaults(fn=cmd_guidance)
 
+    st = sub.add_parser("statutes", help="download, chunk, embed and store the CPSA and FHSA")
+    st.add_argument("--dry-run", action="store_true", help="parse and chunk only")
+    st.add_argument("--refresh", action="store_true", help="download again even if present")
+    st.set_defaults(fn=cmd_statutes)
+
     sub.add_parser("stats", help="summary of stored chunks").set_defaults(fn=cmd_stats)
 
     sh = sub.add_parser("show", help="print the chunks of one section")
-    sh.add_argument("section", help="e.g. 1263.3 or cpsc-faq-cpc#2")
+    sh.add_argument("section", help='e.g. 1263.3, "15 U.S.C. 2063" or cpsc-faq-cpc#2')
     sh.add_argument("--chars", type=int, default=600)
     sh.set_defaults(fn=cmd_show)
 
