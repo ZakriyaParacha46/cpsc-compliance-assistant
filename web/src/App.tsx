@@ -24,6 +24,13 @@ export default function App() {
   const [viewer, setViewer] = useState<Viewer>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const answerRef = useRef<HTMLDivElement>(null);
+  const [asked, setAsked] = useState(0);
+
+  // Bring the new answer into view: it starts below the question box and example chips.
+  useEffect(() => {
+    if (asked) answerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [asked]);
 
   useEffect(() => {
     listDocuments().then(setDocs).catch(() => setDocs([]));
@@ -41,6 +48,7 @@ export default function App() {
     abortRef.current = ctrl;
     setQuestion(text);
     setViewer(null);
+    setAsked((n) => n + 1);
     setAnswer({
       question: text,
       text: "",
@@ -212,7 +220,9 @@ export default function App() {
             </form>
 
             {answer ? (
-              <Answer answer={answer} activeCitation={viewer?.citation?.n ?? null} onOpenCitation={openCitation} />
+              <div ref={answerRef} className="scroll-mt-4">
+                <Answer answer={answer} activeCitation={viewer?.citation?.n ?? null} onOpenCitation={openCitation} />
+              </div>
             ) : (
               <div className="flex flex-col gap-3 border-t border-line pt-6 text-[15px] text-muted">
                 <p className="max-w-[62ch]">

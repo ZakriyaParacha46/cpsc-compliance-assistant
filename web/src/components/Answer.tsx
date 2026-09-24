@@ -44,36 +44,75 @@ interface Props {
   onOpenCitation: (c: Citation) => void;
 }
 
-/** Renders answer text, turning each [n] marker into a button that opens that source. */
-function AnswerText({ text, citations, activeCitation, onOpenCitation }: {
-  text: string;
+type CiteProps = {
   citations: Citation[];
   activeCitation: number | null;
   onOpenCitation: (c: Citation) => void;
-}) {
+};
+
+const LIST_ITEM = /^\s*(?:[-*•]|\d+[.)])\s+/;
+
+/** One line of text: **bold** spans, and [n] markers as buttons that open that source. */
+function Inline({ text, ...p }: { text: string } & CiteProps) {
   return (
-    <div className="flex flex-col gap-4">
-      {text.split(/\n\n+/).map((para, i) => (
-        <p key={i} className="max-w-[68ch] text-[16px] leading-[1.7]">
-          {para.split(/(\[\d+\])/).map((part, j) => {
-            const m = /^\[(\d+)\]$/.exec(part);
-            const c = m && citations.find((x) => x.n === Number(m[1]));
-            if (!c) return <span key={j}>{part}</span>;
-            return (
-              <button
-                key={j}
-                onClick={() => onOpenCitation(c)}
-                title={c.source_type === "rule" ? `16 CFR ${c.section}` : c.title}
-                className={`mx-0.5 inline-flex -translate-y-0.5 items-center rounded px-1 font-mono text-[11px] font-medium leading-4 transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
-                  activeCitation === c.n ? "bg-accent text-on-accent" : "bg-accent-soft text-accent hover:bg-accent hover:text-on-accent"
-                }`}
-              >
-                {c.n}
-              </button>
-            );
-          })}
-        </p>
-      ))}
+    <>
+      {text.split(/(\*\*[^*]+\*\*|\[\d+\])/).map((part, j) => {
+        if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+          return (
+            <strong key={j} className="font-semibold text-ink">
+              <Inline text={part.slice(2, -2)} {...p} />
+            </strong>
+          );
+        }
+        const m = /^\[(\d+)\]$/.exec(part);
+        const c = m && p.citations.find((x) => x.n === Number(m[1]));
+        if (!c) return <span key={j}>{part}</span>;
+        return (
+          <button
+            key={j}
+            onClick={() => p.onOpenCitation(c)}
+            title={c.source_type === "rule" ? `16 CFR ${c.section}` : c.title}
+            className={`mx-0.5 inline-flex -translate-y-0.5 items-center rounded px-1 font-mono text-[11px] font-medium leading-4 transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
+              p.activeCitation === c.n
+                ? "bg-accent text-on-accent"
+                : "bg-accent-soft text-accent hover:bg-accent hover:text-on-accent"
+            }`}
+          >
+            {c.n}
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+/** Renders the answer's small Markdown subset: paragraphs, bullet or numbered lists, bold. */
+function AnswerText({ text, ...p }: { text: string } & CiteProps) {
+  return (
+    <div className="flex max-w-[68ch] flex-col gap-4 text-[16px] leading-[1.7]">
+      {text.split(/\n\n+/).map((block, i) => {
+        const lines = block.split("\n").filter((l) => l.trim());
+        if (lines.length && lines.every((l) => LIST_ITEM.test(l))) {
+          const ordered = /^\s*\d/.test(lines[0]);
+          const items = lines.map((l, j) => (
+            <li key={j}>
+              <Inline text={l.replace(LIST_ITEM, "")} {...p} />
+            </li>
+          ));
+          return ordered ? (
+            <ol key={i} className="list-decimal space-y-1.5 pl-6">{items}</ol>
+          ) : (
+            <ul key={i} className="list-disc space-y-1.5 pl-6">{items}</ul>
+          );
+        }
+        // A stray Markdown heading becomes a bold line.
+        const heading = /^#+\s+(.*)$/.exec(block.trim());
+        return (
+          <p key={i}>
+            <Inline text={heading ? `**${heading[1]}**` : lines.join(" ")} {...p} />
+          </p>
+        );
+      })}
     </div>
   );
 }
