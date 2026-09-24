@@ -78,6 +78,10 @@ flowchart LR
   GH["GitHub Actions"] -->|"OIDC → SSM Run Command"| EC2
 ```
 
+**Step by step, from browser to Bedrock and back** (9 steps):
+
+![How a question travels: DNS and CloudFront, the /api/ask request, validation and rate limits, parallel scope check and hybrid retrieval, guardrails, streamed sources, the grounded answer, logging, and opening a citation](docs/request-flow.gif)
+
 - **One domain for site and API:** CloudFront serves the static React app from a private S3 bucket and forwards `/api/*` to the server, so the HTTP-only visitor cookie works with no CORS.
 - **The server is unreachable directly:** port 80 accepts only CloudFront's origin-facing IP ranges, and Postgres isn't published at all.
 - **No stored AWS keys:** the server uses an IAM role; GitHub Actions uses OIDC.
@@ -134,6 +138,10 @@ The answer is **buffered, checked, then streamed**, so a user never sees an answ
 5. **Relevance guard**: if even the closest chunk is further than 0.70, the answer is "not covered" with no model call.
 
 LangChain's `EnsembleRetriever` drops scores, which the relevance guard needs, so this is a custom `BaseRetriever` that still plugs into LCEL chains.
+
+**Where LangChain fits** (8 steps: `Embeddings`, `PGVector`, `BaseRetriever`, two LCEL chains, and fakes for tests):
+
+![How LangChain is used: parse and chunk, TitanEmbeddings, PGVector, HybridRetriever, the classifier chain in parallel with retrieval, the answer chain, the citation check, and fakes for tests](docs/langchain.gif)
 
 **Evaluation** ([`api/eval/`](api/eval)): a golden set of questions, each listing every source that correctly answers it, plus off-topic questions that must be refused. `make eval` scores every configuration. It calls Titan and the Haiku classifier only (~$0.002 per run).
 

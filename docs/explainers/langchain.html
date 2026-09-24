@@ -1,0 +1,112 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,600&display=swap">
+<link rel="stylesheet" href="explainer.css">
+<style>
+  .caption { height: 142px; }
+  .caption .code { font: 500 12px/1.45 var(--mono); color: var(--accent); background: var(--paper);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; white-space: pre; overflow: hidden; }
+  .box .s b { color: var(--ink); font-weight: 500; }
+  .box.swap.on { border-color: var(--guide); box-shadow: 0 0 0 2px var(--guide-soft), 0 0 22px rgba(124,199,176,.2); }
+  .box.swap.on .t { color: var(--guide); }
+</style>
+</head><body>
+<div id="stage">
+  <div class="top"><span class="eyebrow">CPSC Compliance Assistant</span><h1>How LangChain is used</h1><span class="step" id="step"></span></div>
+
+  <div class="group" id="g-in" style="left:14px;top:66px;width:932px;height:124px"><span class="gl">INGEST · python -m ingest (offline)</span></div>
+  <div class="box" id="parse" style="left:28px;top:84px;width:172px;height:92px"><div class="t">Parsers</div><div class="s">eCFR XML<br>U.S. Code HTML<br>saved CPSC HTML</div></div>
+  <div class="box" id="chunk" style="left:222px;top:84px;width:196px;height:92px"><div class="t">Section-aware chunks</div><div class="s">chunk_section()<br>build_chunks() → <b>Chunk</b><br>header · metadata · offsets</div></div>
+  <div class="box" id="emb" style="left:440px;top:84px;width:212px;height:92px"><div class="t">TitanEmbeddings</div><div class="s">subclass of <b>Embeddings</b><br>embed_documents · 8 threads<br>embed_query (at question time)</div></div>
+  <div class="box" id="pgv" style="left:674px;top:84px;width:258px;height:92px"><div class="t">PGVector</div><div class="s">langchain-postgres<br>add_embeddings(texts, vectors, …)<br>langchain_pg_embedding · HNSW</div></div>
+
+  <div class="group" id="g-q" style="left:14px;top:214px;width:932px;height:222px"><span class="gl">QUERY · app/rag/pipeline.py (per question)</span></div>
+  <div class="box" id="q" style="left:28px;top:236px;width:132px;height:64px"><div class="t">Question</div><div class="s">POST /api/ask</div></div>
+  <div class="box" id="fake" style="left:28px;top:322px;width:132px;height:98px"><div class="t">Fakes for tests</div><div class="s">DeterministicFake-<br>Embedding<br>FakeListChatModel</div></div>
+  <div class="box" id="cls" style="left:184px;top:236px;width:262px;height:78px"><div class="t">Scope classifier · LCEL</div><div class="s">CLASSIFIER_PROMPT<br>| ChatBedrockConverse(3 tokens)<br>| StrOutputParser() → IN / OUT</div></div>
+  <div class="box" id="ret" style="left:184px;top:330px;width:262px;height:92px"><div class="t">HybridRetriever</div><div class="s">subclass of <b>BaseRetriever</b><br>PGVector top 50 + BM25 top 50<br>RRF → one per section → balance</div></div>
+  <div class="box" id="ans" style="left:470px;top:270px;width:250px;height:112px"><div class="t">Answer chain · LCEL</div><div class="s"><b>ChatPromptTemplate</b><br>system rules + numbered sources<br>+ &lt;question&gt;<br>| ChatBedrockConverse(800)</div></div>
+  <div class="box" id="chk" style="left:744px;top:270px;width:188px;height:112px"><div class="t">Check &amp; stream</div><div class="s">citations.check()<br>every [n] is real<br>SSE: sources · token<br>· done</div></div>
+
+  <svg id="wires" width="960" height="600"></svg>
+  <div class="caption"><div class="ct" id="ct"></div><div class="cd" id="cd"></div><div class="code" id="code"></div></div>
+</div>
+<script>
+const WIRES = [
+  ["parse-chunk", "parse", "chunk"], ["chunk-emb", "chunk", "emb"], ["emb-pgv", "emb", "pgv"],
+  ["q-cls", "q", "cls"], ["q-ret", "q", "ret"], ["pgv-ret", "pgv", "ret"],
+  ["cls-ans", "cls", "ans"], ["ret-ans", "ret", "ans"], ["ans-chk", "ans", "chk"],
+];
+const STEPS = [
+  { on: ["parse", "chunk", "g-in"], w: ["parse-chunk"],
+    t: "1 · Parse and chunk", d: "Ingestion turns three source formats into sections, then chunks: one per legal section or FAQ answer, split only past ~800 tokens, each with a context header and metadata.",
+    code: 'build_chunks(doc)  →  [Chunk(id="cfr-1263:1263.3:0", text, metadata)]' },
+  { on: ["emb", "g-in"], w: ["chunk-emb"],
+    t: "2 · Embed with a custom Embeddings class", d: "TitanEmbeddings implements LangChain's Embeddings interface around Amazon Titan V2: 8 parallel calls, adaptive retries on throttling, and a token counter for cost.",
+    code: "class TitanEmbeddings(Embeddings):  embed_documents(texts) · embed_query(text)" },
+  { on: ["pgv", "g-in"], w: ["emb-pgv"],
+    t: "3 · Store in PGVector", d: "langchain-postgres writes text, the 1024-number vector and JSONB metadata. Stable ids turn re-loads into upserts, and an HNSW index keeps cosine search fast.",
+    code: 'PGVector(embeddings, collection_name="cpsc", embedding_length=1024).add_embeddings(...)' },
+  { on: ["q", "ret", "pgv", "g-q"], w: ["q-ret", "pgv-ret"],
+    t: "4 · Retrieve with a custom BaseRetriever", d: "HybridRetriever asks PGVector for the top 50 with scores and BM25 for keyword matches, then fuses, dedupes and balances. Custom because EnsembleRetriever drops the scores the relevance guard needs.",
+    code: "vector_store.similarity_search_with_score(q, k=50)  →  _fuse()  →  _select()" },
+  { on: ["q", "cls", "ret", "g-q"], w: ["q-cls", "q-ret"],
+    t: "5 · Classify in parallel (LCEL)", d: "A three-step LCEL chain asks Claude Haiku on Bedrock for IN or OUT, at the same time as retrieval, so the scope check adds no latency.",
+    code: "await asyncio.gather(  (CLASSIFIER_PROMPT | llm | StrOutputParser()).ainvoke(q),  retrieve(q)  )" },
+  { on: ["cls", "ret", "ans", "g-q"], w: ["cls-ans", "ret-ans"],
+    t: "6 · Generate the grounded answer (LCEL)", d: "A ChatPromptTemplate holds the rules, the six sources as numbered quoted blocks, and the question in its own tag. The AIMessage carries usage_metadata for token logging.",
+    code: '(ANSWER_PROMPT | ChatBedrockConverse(max_tokens=800)).ainvoke({"sources": s, "question": q})' },
+  { on: ["ans", "chk", "g-q"], w: ["ans-chk"],
+    t: "7 · Check, then stream", d: "Plain Python takes over from LangChain: every [n] must match a retrieved source, or the answer becomes \"not covered\". Checked text streams as Server-Sent Events.",
+    code: "citations.check(text, n_sources)  →  event: sources · event: token · event: done" },
+  { on: ["fake", "emb", "cls", "ans", "g-q", "g-in"], w: [], swap: true,
+    t: "8 · Swap in fakes for tests", d: "Because every part sits behind a LangChain interface, tests and offline dev swap Titan and Claude for fakes. 70 tests run in CI with no AWS account.",
+    code: "LLM_MODE=fake  →  DeterministicFakeEmbedding(size=1024) · FakeListChatModel(responses=[...])" },
+];
+
+function rect(id) {
+  const el = document.getElementById(id), s = document.getElementById("stage").getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  return { x: r.left - s.left, y: r.top - s.top, w: r.width, h: r.height };
+}
+function edgePoint(r, tx, ty) {
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2, dx = tx - cx, dy = ty - cy;
+  const k = Math.min(Math.abs((r.w / 2) / (dx || 1e-9)), Math.abs((r.h / 2) / (dy || 1e-9)));
+  return [cx + dx * k, cy + dy * k];
+}
+function draw() {
+  const svg = document.getElementById("wires");
+  svg.innerHTML = `<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#82aee8"/></marker></defs>`;
+  for (const [id, a, b] of WIRES) {
+    const ra = rect(a), rb = rect(b);
+    if (id === "pgv-ret") { // route around the answer box: down, left through the gap, into the side
+      const x0 = ra.x + 60, y0 = ra.y + ra.h, gapX = 458, yIn = rb.y + rb.h / 2;
+      svg.insertAdjacentHTML("beforeend",
+        `<path id="w-${id}" d="M${x0},${y0} V202 H${gapX} V${yIn} H${rb.x + rb.w}"/>`);
+      continue;
+    }
+    const [x1, y1] = edgePoint(ra, rb.x + rb.w / 2, rb.y + rb.h / 2);
+    const [x2, y2] = edgePoint(rb, ra.x + ra.w / 2, ra.y + ra.h / 2);
+    svg.insertAdjacentHTML("beforeend", `<path id="w-${id}" d="M${x1},${y1} L${x2},${y2}"/>`);
+  }
+}
+window.show = (i) => {
+  const st = STEPS[i];
+  document.querySelectorAll(".box,.group").forEach((e) => {
+    e.classList.toggle("on", st.on.includes(e.id));
+    e.classList.toggle("swap", !!st.swap);
+  });
+  document.querySelectorAll("#wires path[id^=w-]").forEach((p) => {
+    const on = st.w.includes(p.id.slice(2));
+    p.classList.toggle("on", on);
+    p.setAttribute("marker-end", on ? "url(#a)" : "");
+  });
+  document.getElementById("step").textContent = `step ${i + 1} / ${STEPS.length}`;
+  document.getElementById("ct").textContent = st.t;
+  document.getElementById("cd").textContent = st.d;
+  document.getElementById("code").textContent = st.code;
+};
+window.steps = STEPS.length;
+document.fonts.ready.then(() => { draw(); show(0); window.ready = true; });
+</script>
+</body></html>

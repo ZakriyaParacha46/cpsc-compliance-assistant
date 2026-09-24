@@ -1,0 +1,109 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,600&display=swap">
+<link rel="stylesheet" href="explainer.css">
+</head><body>
+<div id="stage">
+  <div class="top"><span class="eyebrow">CPSC Compliance Assistant</span><h1>How a question travels</h1><span class="step" id="step"></span></div>
+
+  <div class="box" id="browser" style="left:24px;top:92px;width:136px;height:74px"><div class="t">Browser</div><div class="s">React + TypeScript<br>HTTPS only</div></div>
+  <div class="box" id="dns" style="left:24px;top:212px;width:136px;height:58px"><div class="t">GoDaddy DNS</div><div class="s">cpsc → CNAME</div></div>
+
+  <div class="group" id="g-aws" style="left:188px;top:70px;width:186px;height:300px"><span class="gl">AWS EDGE</span></div>
+  <div class="box" id="cf" style="left:202px;top:92px;width:158px;height:92px"><div class="t">CloudFront</div><div class="s">HTTPS · ACM cert<br>security headers<br>/api/* → EC2</div></div>
+  <div class="box" id="s3" style="left:202px;top:252px;width:158px;height:88px"><div class="t">S3 web bucket</div><div class="s">index.html + JS<br>private · OAC only</div></div>
+
+  <div class="group" id="g-ec2" style="left:400px;top:70px;width:356px;height:300px"><span class="gl">EC2 t4g.small · DOCKER COMPOSE</span></div>
+  <div class="box" id="caddy" style="left:414px;top:92px;width:104px;height:74px"><div class="t">Caddy</div><div class="s">reverse proxy<br>SSE pass-through</div></div>
+  <div class="box" id="api" style="left:540px;top:92px;width:202px;height:120px"><div class="t">FastAPI</div><div class="s">POST /api/ask<br>validate · cookie · IP<br>rate limits<br>LangChain pipeline<br>citation check</div></div>
+  <div class="box" id="bm25" style="left:414px;top:238px;width:104px;height:110px"><div class="t">BM25</div><div class="s">keyword index<br>in memory<br>701 chunks</div></div>
+  <div class="box" id="pg" style="left:540px;top:238px;width:202px;height:110px"><div class="t">Postgres + pgvector</div><div class="s">chunks · vectors (HNSW)<br>documents<br>usage_counters<br>query_log · feedback</div></div>
+
+  <div class="group" id="g-br" style="left:782px;top:70px;width:154px;height:300px"><span class="gl">AMAZON BEDROCK</span></div>
+  <div class="box" id="titan" style="left:796px;top:92px;width:126px;height:74px"><div class="t">Titan V2</div><div class="s">embeddings<br>1024 dims</div></div>
+  <div class="box" id="haiku" style="left:796px;top:200px;width:126px;height:92px"><div class="t">Claude Haiku 4.5</div><div class="s">scope check<br>grounded answer</div></div>
+  <div class="box" id="role" style="left:796px;top:310px;width:126px;height:44px"><div class="t" style="font-size:11px">IAM role</div><div class="s">no stored keys</div></div>
+
+  <div class="note" style="left:24px;top:392px">Security: <b>port 80</b> open to CloudFront only · <b>SSH</b> from one IP · <b>Postgres</b> not published · <b>no AWS keys</b> anywhere (IAM role, OIDC)</div>
+  <svg id="wires" width="960" height="600"></svg>
+  <div class="caption"><div class="ct" id="ct"></div><div class="cd" id="cd"></div><div class="chips" id="chips"></div></div>
+</div>
+<script>
+const WIRES = [
+  ["b-dns", "browser", "dns"], ["b-cf", "browser", "cf"], ["cf-s3", "cf", "s3"],
+  ["cf-caddy", "cf", "caddy"], ["caddy-api", "caddy", "api"], ["api-pg", "api", "pg"],
+  ["api-bm", "api", "bm25"], ["api-titan", "api", "titan"], ["api-haiku", "api", "haiku"],
+];
+const STEPS = [
+  { on: ["browser", "dns", "cf", "s3", "g-aws"], w: ["b-dns", "b-cf", "cf-s3"],
+    t: "1 · Load the site", d: "DNS points cpsc.zakriyaparacha.com at CloudFront. CloudFront serves the React app over HTTPS from a private S3 bucket that only it can read.",
+    c: ["GoDaddy CNAME", "CloudFront", "ACM TLS 1.2+", "S3 + OAC", "HSTS"] },
+  { on: ["browser", "cf", "caddy", "g-aws", "g-ec2"], w: ["b-cf", "cf-caddy"],
+    t: "2 · Ask a question", d: "The browser POSTs to /api/ask on the same domain. CloudFront's /api/* rule forwards it, uncached, to the server; the firewall only lets CloudFront's IP ranges in.",
+    c: ["POST /api/ask", "CloudFront /api/* behavior", "security group: CloudFront prefix list"] },
+  { on: ["caddy", "api", "pg", "g-ec2"], w: ["caddy-api", "api-pg"],
+    t: "3 · Check the request", d: "Caddy hands it to FastAPI. Pydantic checks 1–500 characters (else 422); the visitor cookie and client IP drive rate limits, counted atomically in Postgres (else 429).",
+    c: ["Caddy", "FastAPI + Pydantic", "cpsc_vid cookie", "X-Forwarded-For (2 hops)", "usage_counters"] },
+  { on: ["api", "haiku", "titan", "pg", "bm25", "g-ec2", "g-br"], w: ["api-haiku", "api-titan", "api-pg", "api-bm"],
+    t: "4 · Classify and retrieve, in parallel", d: "Claude Haiku says IN or OUT of scope, while Titan embeds the question for pgvector's top 50 and BM25 finds keyword matches. Results merge by rank fusion, one per section, guidance capped.",
+    c: ["asyncio.gather", "Bedrock: Claude Haiku", "Bedrock: Titan V2", "pgvector HNSW", "BM25", "RRF k=60"] },
+  { on: ["api", "g-ec2"], w: [],
+    t: "5 · Guardrails before the model", d: "Off-topic → a polite refusal. Closest chunk further than 0.70 → \"not covered\". Either way the answer model is never called, so bad questions cost almost nothing.",
+    c: ["scope: OUT → refuse", "distance > 0.70 → not covered", "not counted toward daily limit"], warn: true },
+  { on: ["browser", "cf", "caddy", "api"], w: ["b-cf", "cf-caddy", "caddy-api"], back: true,
+    t: "6 · Stream the sources", d: "The first Server-Sent Event carries the six numbered sources, so the UI shows \"Found 6 sources\" while the answer is written.",
+    c: ["text/event-stream", "event: sources", "Caddy flush_interval -1", "no compression on /api/*"], green: true },
+  { on: ["api", "haiku", "g-br"], w: ["api-haiku"],
+    t: "7 · Write the grounded answer", d: "Claude Haiku gets the six sources as numbered, quoted blocks and the question in its own tag. It must cite every sentence as [n]. Code then checks every [n] is a real source.",
+    c: ["ChatBedrockConverse", "max 800 tokens", "prompt-injection defences", "citations.check"] },
+  { on: ["browser", "cf", "caddy", "api", "pg"], w: ["b-cf", "cf-caddy", "caddy-api", "api-pg"], back: true,
+    t: "8 · Stream the answer and log it", d: "Checked text streams as token events, then done with status, cited numbers and questions left. A query_log row records latency, tokens and the chunks used.",
+    c: ["event: token", "event: done", "query_log", "feedback 👍/👎"], green: true },
+  { on: ["browser", "cf", "caddy", "api", "pg"], w: ["b-cf", "cf-caddy", "caddy-api", "api-pg"],
+    t: "9 · Open a citation", d: "Clicking [n] fetches the full document and scrolls to the stored character offsets, so the exact passage used is highlighted, with a link to eCFR, govinfo or cpsc.gov.",
+    c: ["GET /api/documents/{id}", "start/end offsets", "Rule · Law · Guidance"] },
+];
+
+function rect(id) {
+  const el = document.getElementById(id), s = document.getElementById("stage").getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  return { x: r.left - s.left, y: r.top - s.top, w: r.width, h: r.height };
+}
+function edgePoint(r, tx, ty) { // where the line from the box centre towards (tx, ty) leaves the box
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2, dx = tx - cx, dy = ty - cy;
+  const k = Math.min(Math.abs((r.w / 2) / (dx || 1e-9)), Math.abs((r.h / 2) / (dy || 1e-9)));
+  return [cx + dx * k, cy + dy * k];
+}
+function draw() {
+  const svg = document.getElementById("wires");
+  svg.innerHTML = `<defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#82aee8" stroke="none"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7cc7b0" stroke="none"/></marker></defs>`;
+  for (const [id, a, b] of WIRES) {
+    const ra = rect(a), rb = rect(b);
+    const [x1, y1] = edgePoint(ra, rb.x + rb.w / 2, rb.y + rb.h / 2);
+    const [x2, y2] = edgePoint(rb, ra.x + ra.w / 2, ra.y + ra.h / 2);
+    svg.insertAdjacentHTML("beforeend", `<path id="w-${id}" d="M${x1},${y1} L${x2},${y2}"/>`);
+  }
+}
+window.show = (i) => {
+  const st = STEPS[i];
+  document.querySelectorAll(".box,.group").forEach((e) => e.classList.toggle("on", st.on.includes(e.id)));
+  document.querySelectorAll(".box").forEach((e) => e.classList.toggle("back", !!st.back && st.on.includes(e.id)));
+  document.querySelectorAll("#wires path[id^=w-]").forEach((p) => {
+    const on = st.w.includes(p.id.slice(2));
+    p.classList.toggle("on", on);
+    p.classList.toggle("back", on && !!st.back);
+    p.setAttribute("marker-end", on ? (st.back ? "" : "url(#a)") : "");
+    p.setAttribute("marker-start", on && st.back ? "url(#g)" : "");
+  });
+  document.getElementById("step").textContent = `step ${i + 1} / ${STEPS.length}`;
+  document.getElementById("ct").textContent = st.t;
+  document.getElementById("cd").textContent = st.d;
+  document.getElementById("chips").innerHTML = st.c
+    .map((c) => `<span class="chip ${st.green ? "g" : st.warn ? "w" : ""}">${c}</span>`).join("");
+};
+window.steps = STEPS.length;
+document.fonts.ready.then(() => { draw(); show(0); window.ready = true; });
+</script>
+</body></html>
