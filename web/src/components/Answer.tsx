@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { sendFeedback } from "../api";
 import type { AnswerStatus, Citation } from "../types";
 
 export interface AnswerState {
@@ -8,6 +10,31 @@ export interface AnswerState {
   standards: string[];
   status: AnswerStatus | null; // null while streaming
   error: string | null;
+  queryId: string | null;
+}
+
+function Feedback({ queryId }: { queryId: string }) {
+  const [sent, setSent] = useState<1 | -1 | null>(null);
+  const vote = (rating: 1 | -1) => {
+    setSent(rating);
+    sendFeedback(queryId, rating).catch(() => setSent(null));
+  };
+  if (sent) return <p className="text-xs text-muted">Thanks, feedback recorded.</p>;
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted">
+      <span>Was this answer useful?</span>
+      {([1, -1] as const).map((r) => (
+        <button
+          key={r}
+          onClick={() => vote(r)}
+          aria-label={r === 1 ? "Useful" : "Not useful"}
+          className="rounded border border-line px-2 py-0.5 hover:border-accent hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          {r === 1 ? "👍" : "👎"}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 interface Props {
@@ -83,7 +110,11 @@ export function Answer({ answer, activeCitation, onOpenCitation }: Props) {
               onOpenCitation={onOpenCitation}
             />
           ) : (
-            <p className="text-muted">Searching the regulations…</p>
+            <p className="text-muted">
+              {answer.citations.length
+                ? `Found ${answer.citations.length} sources. Writing the answer…`
+                : "Searching the regulations…"}
+            </p>
           )}
           {streaming && answer.text && (
             <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-accent align-middle" aria-hidden="true" />
@@ -97,6 +128,8 @@ export function Answer({ answer, activeCitation, onOpenCitation }: Props) {
           )}
         </div>
       )}
+
+      {answer.status === "answered" && answer.queryId && <Feedback queryId={answer.queryId} />}
 
       {!streaming && (
         <p className="text-xs leading-relaxed text-muted">

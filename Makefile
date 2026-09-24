@@ -28,6 +28,10 @@ up: ## Start db + api (hot reload) on :8000; run `make web` for the UI on :5173
 web: ## Vite dev server on :5173 (proxies /api to :8000)
 	cd web && npm run dev
 
+tunnel: ## Forward the server's API to this Mac's :8000 (keep it open): make tunnel HOST=<server-ip>
+	@test -n "$(HOST)" || { echo "usage: make tunnel HOST=<server public IP>"; exit 1; }
+	ssh -i ~/.ssh/cpsc-rag -N -L 8000:127.0.0.1:8000 ec2-user@$(HOST)
+
 preview: ## UI with sample data only, no backend or AWS, on :5173
 	cd web && npm run dev:mock
 
@@ -125,4 +129,4 @@ ci-local: check image image-smoke lint-workflows lint-infra ## Full CI dry run l
 act: ## Run the pipeline's check jobs in containers via `act` (brew install act)
 	act push -j api-check -j web-check --container-architecture linux/arm64
 
-.PHONY: help setup hooks up web preview ingest-download ingest-dry-run ingest-load ingest-guidance ingest-statutes ingest-stats ask eval show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act
+.PHONY: help setup hooks up web tunnel preview ingest-download ingest-dry-run ingest-load ingest-guidance ingest-statutes ingest-stats ask eval show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act

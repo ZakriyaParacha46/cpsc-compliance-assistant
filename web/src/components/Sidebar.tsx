@@ -2,6 +2,18 @@ import { useMemo, useState } from "react";
 import type { Citation, DocSummary } from "../types";
 import { SourceBadge } from "./SourceBadge";
 
+/** "16 CFR 1110.7", "15 U.S.C. 2063", or the guidance page's name. */
+export function citationLabel(c: Citation): string {
+  if (c.source_type === "rule") return `16 CFR ${c.section}`;
+  if (c.source_type === "law") return c.section;
+  return c.doc_title || "CPSC guidance";
+}
+
+/** The section heading without its number, which the label already shows. */
+export function citationTitle(c: Citation): string {
+  return c.title.replace(/^(15 U\.S\.C\. )?§\s*[\w.]+\s*/, "");
+}
+
 interface Props {
   docs: DocSummary[];
   citations: Citation[];
@@ -51,11 +63,11 @@ export function Sidebar({ docs, citations, activeDocId, activeCitation, onOpenCi
                     <span className="flex items-center gap-2">
                       <SourceBadge type={c.source_type} />
                       <span className="font-mono text-xs text-muted">
-                        {c.source_type === "rule" ? `16 CFR ${c.section}` : c.source_type === "law" ? c.section : "cpsc.gov"}
+                        {citationLabel(c)}
                       </span>
                     </span>
                     <span className="line-clamp-2 text-[13px] leading-snug">
-                      {c.title.replace(/^§\s*[\d.]+\s*/, "")}
+                      {citationTitle(c)}
                     </span>
                   </span>
                 </button>

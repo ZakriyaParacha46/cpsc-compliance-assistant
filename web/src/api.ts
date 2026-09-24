@@ -18,6 +18,17 @@ export const getDocument = (id: string): Promise<DocFull> =>
 
 export const getUsage = (): Promise<Usage> => (MOCK ? mock().then((m) => m.getUsage()) : getJson("/api/usage"));
 
+export async function sendFeedback(queryId: string, rating: 1 | -1): Promise<void> {
+  if (MOCK) return;
+  const res = await fetch("/api/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query_id: queryId, rating }),
+    credentials: "same-origin",
+  });
+  if (!res.ok) throw new Error(`feedback failed: ${res.status}`);
+}
+
 /** POST /api/ask and parse the SSE stream: sources, then token*, then done (or error). */
 export async function ask(
   question: string,

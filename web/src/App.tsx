@@ -48,6 +48,7 @@ export default function App() {
       standards: [],
       status: null,
       error: null,
+      queryId: null,
     });
 
     await ask(
@@ -57,7 +58,7 @@ export default function App() {
           if (!a) return a;
           switch (e.type) {
             case "sources":
-              return { ...a, citations: e.citations };
+              return { ...a, citations: e.citations, queryId: e.query_id };
             case "token":
               return { ...a, text: a.text + e.text };
             case "done":
