@@ -61,6 +61,9 @@ prod-up: ## Rebuild and restart the production stack after a git pull
 	docker compose -f deploy/compose.prod.yml up -d --build --remove-orphans
 	@sleep 5; curl -fsS http://127.0.0.1:8000/api/health && echo
 
+deploy-web: ## Build the React site and publish it to S3 + CloudFront (on the server)
+	scripts/deploy-web.sh
+
 ps: ## Show running containers
 	$(COMPOSE) ps
 
@@ -136,8 +139,8 @@ image-smoke: ## Start the image with no DB and check it serves /api/health
 lint-workflows: ## Validate GitHub Actions YAML (actionlint, via Docker)
 	docker run --rm -v "$$PWD:/repo" -w /repo rhysd/actionlint:latest -color
 
-lint-infra: ## Validate the CloudFormation template (cfn-lint)
-	uvx cfn-lint infra/bootstrap.yml
+lint-infra: ## Validate the CloudFormation templates (cfn-lint)
+	uvx cfn-lint infra/dev-server.yml infra/public.yml
 
 ci-local: check image image-smoke lint-workflows lint-infra ## Full CI dry run locally, no AWS needed
 	@echo "✔ ci-local passed: safe to push"
@@ -145,4 +148,4 @@ ci-local: check image image-smoke lint-workflows lint-infra ## Full CI dry run l
 act: ## Run the pipeline's check jobs in containers via `act` (brew install act)
 	act push -j api-check -j web-check --container-architecture linux/arm64
 
-.PHONY: help setup hooks up web tunnel preview go-prod prod-up ps ingest-download ingest-dry-run ingest-load ingest-guidance ingest-statutes ingest-stats ask reset-limits eval show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act
+.PHONY: help setup hooks up web tunnel preview go-prod prod-up deploy-web ps ingest-download ingest-dry-run ingest-load ingest-guidance ingest-statutes ingest-stats ask reset-limits eval show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act

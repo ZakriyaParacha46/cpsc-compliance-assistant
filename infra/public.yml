@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CPSC Compliance Assistant - public front door. CloudFront serves the React site from a
+  private S3 bucket and forwards /api/* to the existing EC2 server (dev-server stack), with an
+  ACM certificate for the custom domain. Opens the server's port 80 to CloudFront only.
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: cpsc.zakriyaparacha.com
+  CertificateArn:
+    Type: String
+    Description: ACM certificate for DomainName, requested in us-east-1 and already Issued
+    AllowedPattern: ^arn:aws:acm:us-east-1:\d{12}:certificate/.+$
+    ConstraintDescription: Must be an ACM certificate ARN in us-east-1
+  ServerPublicIp:
+    Type: String
+    Description: The server's Elastic IP (cpsc-rag-dev stack, Outputs, PublicIp)
+    AllowedPattern: ^(\d{1,3}\.){3}\d{1,3}$
+  ServerSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: The server's security group (cpsc-rag-dev stack, Resources, ServerSG)
+  ServerRoleName:
+    Type: String
+    Description: The server's IAM role name (cpsc-rag-dev stack, Resources, InstanceRole)
+  CloudFrontPrefixList:
+    Type: String
+    Default: pl-3b927c52
+    Description: com.amazonaws.global.cloudfront.origin-facing (us-east-1 value)
+
+Resources:
+  WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags: [{ Key: Project, Value: cpsc-rag }]
+
+  WebOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-web"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # Only this distribution can read the bucket; the bucket itself stays private.
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub "${WebBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub "${DomainName} (CPSC Compliance Assistant)"
+        Enabled: true
+        Aliases: [!Ref DomainName]
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        DefaultRootObject: index.html
+        Origins:
+          - Id: web
+            DomainName: !GetAtt WebBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt WebOAC.Id
+            S3OriginConfig: { OriginAccessIdentity: "" }
+          - Id: api
+            # The Elastic IP's public DNS name (stable across stop/start).
+            DomainName: !Sub
+              - "ec2-${Dashed}.compute-1.amazonaws.com"
+              - Dashed: !Join ["-", !Split [".", !Ref ServerPublicIp]]
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              HTTPPort: 80
+              OriginReadTimeout: 60
+        DefaultCacheBehavior:
+          TargetOriginId: web
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
+          ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03 # Managed-SecurityHeadersPolicy
+          Compress: true
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader (cookies, query, headers)
+            ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
+            Compress: false # keep Server-Sent Events unbuffered
+        CustomErrorResponses:
+          # Private S3 returns 403 for unknown paths: serve the app shell instead.
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+      Tags: [{ Key: Project, Value: cpsc-rag }]
+
+  # Port 80 on the server, from CloudFront's origin-facing IP ranges only.
+  HttpFromCloudFront:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ServerSecurityGroupId
+      Description: HTTP from CloudFront origin-facing ranges only
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourcePrefixListId: !Ref CloudFrontPrefixList
+
+  # Lets the server build and publish the website (make deploy-web), with no AWS keys.
+  WebDeployPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: cpsc-rag-web-deploy
+      Roles: [!Ref ServerRoleName]
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action: [s3:ListBucket]
+            Resource: !GetAtt WebBucket.Arn
+          - Effect: Allow
+            Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+            Resource: !Sub "${WebBucket.Arn}/*"
+          - Effect: Allow
+            Action: cloudfront:CreateInvalidation
+            Resource: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+Outputs:
+  SiteUrl:
+    Value: !Sub "https://${DomainName}"
+  CloudFrontDomain:
+    Description: Point the GoDaddy CNAME for the subdomain here
+    Value: !GetAtt Distribution.DomainName
+  DistributionId:
+    Value: !Ref Distribution
+  WebBucketName:
+    Value: !Ref WebBucket
