@@ -220,7 +220,8 @@ export default function App() {
             </form>
 
             {answer ? (
-              <div ref={answerRef} className="scroll-mt-4">
+              <div ref={answerRef} className="min-h-[75vh] scroll-mt-4">
+                {/* Min height leaves room to scroll the answer to the top while it's still short. */}
                 <Answer answer={answer} activeCitation={viewer?.citation?.n ?? null} onOpenCitation={openCitation} />
               </div>
             ) : (
