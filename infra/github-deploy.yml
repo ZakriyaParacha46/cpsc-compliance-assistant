@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CPSC Compliance Assistant - lets GitHub Actions deploy with no stored AWS keys. GitHub's OIDC
+  token is exchanged for 1-hour credentials that can only run SSM commands on the one server.
+
+Parameters:
+  GitHubRepo:
+    Type: String
+    Default: ZakriyaParacha46/cpsc-compliance-assistant
+    Description: owner/repo allowed to deploy
+  InstanceId:
+    Type: AWS::EC2::Instance::Id
+    Description: The server (cpsc-rag-dev stack, Outputs, InstanceId)
+  CreateOIDCProvider:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: false only if the account already has token.actions.githubusercontent.com
+
+Conditions:
+  MakeOIDC: !Equals [!Ref CreateOIDCProvider, "true"]
+
+Resources:
+  GitHubOIDC:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeOIDC
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: cpsc-rag-github-deploy
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # Only this repo's "production" environment, which only main may deploy to.
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepo}:environment:production"
+      Policies:
+        - PolicyName: deploy-via-ssm
+          PolicyDocument:
+            Statement:
+              - Sid: RunShellScriptOnTheServerOnly
+                Effect: Allow
+                Action: ssm:SendCommand
+                Resource:
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${InstanceId}"
+                  - !Sub "arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript"
+              - Sid: ReadCommandResults # no resource-level permissions exist for these
+                Effect: Allow
+                Action: [ssm:GetCommandInvocation, ssm:ListCommandInvocations]
+                Resource: "*"
+      Tags: [{ Key: Project, Value: cpsc-rag }]
+
+Outputs:
+  RoleArn:
+    Description: Set as the GitHub repo variable AWS_ROLE_ARN
+    Value: !GetAtt DeployRole.Arn

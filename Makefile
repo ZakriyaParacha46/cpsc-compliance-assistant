@@ -57,6 +57,9 @@ prodlike: web-build ## Prod image + built frontend behind Caddy on :8080 (mirror
 go-prod: ## One-time: switch the server from the dev stack to production
 	scripts/go-prod.sh
 
+deploy: ## Deploy the checked-out commit (what CI runs on the server): API + site if web/ changed
+	scripts/deploy.sh
+
 prod-up: ## Rebuild and restart the production stack after a git pull
 	docker compose -f deploy/compose.prod.yml up -d --build --remove-orphans
 	@sleep 5; curl -fsS http://127.0.0.1:8000/api/health && echo
@@ -140,7 +143,7 @@ lint-workflows: ## Validate GitHub Actions YAML (actionlint, via Docker)
 	docker run --rm -v "$$PWD:/repo" -w /repo rhysd/actionlint:latest -color
 
 lint-infra: ## Validate the CloudFormation templates (cfn-lint)
-	uvx cfn-lint infra/dev-server.yml infra/public.yml
+	uvx cfn-lint infra/dev-server.yml infra/public.yml infra/github-deploy.yml
 
 ci-local: check image image-smoke lint-workflows lint-infra ## Full CI dry run locally, no AWS needed
 	@echo "✔ ci-local passed: safe to push"
@@ -148,4 +151,4 @@ ci-local: check image image-smoke lint-workflows lint-infra ## Full CI dry run l
 act: ## Run the pipeline's check jobs in containers via `act` (brew install act)
 	act push -j api-check -j web-check --container-architecture linux/arm64
 
-.PHONY: help setup hooks up web tunnel preview go-prod prod-up deploy-web ps ingest-download ingest-dry-run ingest-load ingest-guidance ingest-statutes ingest-stats ask reset-limits eval show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act
+.PHONY: help setup hooks up web tunnel preview go-prod deploy prod-up deploy-web ps ingest-download ingest-dry-run ingest-load ingest-guidance ingest-statutes ingest-stats ask reset-limits eval show search db down nuke logs prodlike api-check web-check web-build check fmt image image-smoke lint-workflows lint-infra ci-local act
