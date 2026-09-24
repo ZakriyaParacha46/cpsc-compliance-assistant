@@ -1,4 +1,6 @@
 .env
+.env.dev.bak
+.env.*.bak
 .venv/
 __pycache__/
 .pytest_cache/

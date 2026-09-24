@@ -1,11 +1,16 @@
-# Prod: CloudFront terminates HTTPS and forwards /api/* here over HTTP.
-# Port 80 is only open to CloudFront's origin-facing IP ranges (see infra/bootstrap.yml).
-# To add a custom domain later, replace :80 with the domain and Caddy will fetch a cert.
+# Production reverse proxy. Today: reached through the SSH tunnel on 127.0.0.1:8000.
+# Phase C: CloudFront terminates HTTPS and forwards /api/* here over HTTP; the firewall
+# only lets CloudFront's IP ranges reach port 80.
+{
+	admin off
+}
+
 :80 {
 	handle /api/* {
 		reverse_proxy api:8000 {
-			flush_interval -1
+			flush_interval -1 # pass Server-Sent Events through immediately
 		}
 	}
 	respond 404
+	header -Server
 }

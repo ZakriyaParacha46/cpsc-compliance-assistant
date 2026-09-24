@@ -17,4 +17,6 @@ RUN useradd --uid 1000 app
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').status==200 else 1)"
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# No --proxy-headers: app.main.client_ip reads X-Forwarded-For itself and trusts only our own
+# proxies (TRUSTED_PROXY_HOPS), so a client can't forge its IP to dodge rate limits.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header"]

@@ -1,35 +1,52 @@
-# Runs on the EC2 instance from /opt/cpsc-rag. The deploy job copies this file and
-# deploy/Caddyfile there and sets API_IMAGE in .env; secrets come from SSM (scripts/remote-deploy.sh).
-# Memory caps keep everything inside a t4g.small (2 GB).
+# Production stack on the EC2 server, run from the repo checkout at /opt/cpsc-rag.
+# scripts/go-prod.sh puts COMPOSE_FILE=deploy/compose.prod.yml in .env, so plain
+# `docker compose ...` and the make targets use this file on the server.
+#
+# The project name matches the dev stack, so the database volume (cpsc-rag_pgdata) and
+# everything in it carry over. Memory caps keep it all inside a t4g.small (2 GB).
+name: cpsc-rag
+
+x-logging: &logging # rotate container logs so they can never fill the disk
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
 services:
   db:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
-    env_file: [.env]
+    env_file: [../.env] # POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
     command: postgres -c shared_buffers=128MB -c effective_cache_size=256MB -c max_connections=30
     volumes: [pgdata:/var/lib/postgresql/data]
     mem_limit: 512m
+    logging: *logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
       interval: 5s
       retries: 20
 
   api:
-    image: ${API_IMAGE}
+    build: ../api # built on the server from the checked-out code; no reload, no code mounts
+    image: cpsc-rag-api:prod
     restart: unless-stopped
-    env_file: [.env]
+    env_file: [../.env]
+    volumes:
+      - ../data:/app/data # source files for ingestion and eval reports (data only, not code)
     mem_limit: 768m
+    logging: *logging
     depends_on:
       db: { condition: service_healthy }
 
   caddy:
     image: caddy:2
     restart: unless-stopped
-    ports: ["80:80"]
+    ports:
+      - "80:80" # the firewall keeps this closed until CloudFront is in front (Phase C)
+      - "127.0.0.1:8000:80" # SSH tunnel and `make ask` keep using localhost:8000
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
     mem_limit: 64m
+    logging: *logging
     depends_on: [api]
 
 volumes:
